@@ -1,7 +1,5 @@
 # Tyr - Escáner de Vulnerabilidades
 
-![Tyr Banner](https://via.placeholder.com/800x200/000000/FFFFFF?text=Tyr+Security+Scanner)
-
 ## 🛡️ ¿Qué es Tyr?
 
 Tyr es un escáner de vulnerabilidades escrito en Python que analiza proyectos de software en busca de dependencias con vulnerabilidades conocidas. Nombrado en honor al dios nórdico de la guerra y la justicia, Tyr busca proteger tus proyectos identificando posibles puntos débiles en las dependencias.

@@ -53,11 +53,13 @@ class NVDClient:
         self.api_key = api_key
         # Con API key: 0.6 segundos (50 requests por 30 segundos)
         # Sin API key: 6 segundos (5 requests por 30 segundos)
+        # Cualquier consulta adicional puede resultar en bloqueo temporal
+        # eso ya depende de la API de NVD
         self.delay = 0.6 if api_key else 6
 
     def search_cve(self, package_name, version):
         """Busca CVEs para un paquete y versión específicos"""
-        time.sleep(self.delay)  # Respetar rate limiting
+        time.sleep(self.delay)
 
         params = {"keywordSearch": package_name, "resultsPerPage": 20}
 
@@ -449,7 +451,8 @@ def smart_truncate(text, max_length=100):
     if not text:
         return ""
 
-    # Limpiar caracteres problemáticos: comillas, dos puntos, saltos de línea, etc.
+    # Limpiar caracteres problemáticos:
+    # comillas, dos puntos, saltos de línea, etc.
     clean_text = re.sub(r'[\n\r\t:"\']+', " ", str(text))
     # Colapsar múltiples espacios en uno solo
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
@@ -523,6 +526,7 @@ def generate_report(vulnerabilities, project_name, output_file, total_dependenci
 
         for vuln in vulnerabilities:
             # Enlace al CVE que se abre en nueva pestaña
+            # El sitio de NVD puede tardar en cargar en algunos casos
             cve_link = (
                 f"[{vuln['cve']}](https://nvd.nist.gov/vuln/detail/{vuln['cve']})"
             )

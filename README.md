@@ -39,7 +39,7 @@ pip install requests
 ### Descarga del Script
 
 ```bash
-git clone https://github.com/tu-usuario/tyr.git
+git clone https://github.com/chrisatdev/tyr.git
 cd tyr
 ```
 
@@ -108,6 +108,7 @@ Para obtener una API key y acelerar los escaneos:
 ║                                          ║
 ║         Security Scanner v1.0.0          ║
 ║          by Christian Benitez            ║
+║         cbenitezdiaz@gmail.com           ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 

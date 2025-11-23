@@ -6,6 +6,7 @@
 - [docs] update documentation (6 files) by @Christian Benitez
 - [docs] update documentation (4 files) by @Christian Benitez
 ### Added
+- [feat] fix version f-string by @Christian Benitez
 - [feat] remove workflow by @Christian Benitez
 - [feat] add semantic version by @Christian Benitez
 - [feat] add semantic version by @Christian Benitez

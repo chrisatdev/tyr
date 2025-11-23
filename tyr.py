@@ -173,9 +173,8 @@ class OSVClient:
             return vulnerabilities
         except Exception as e:
             print(
-                f"{Colors.RED}Error querying OSV for {package_name} {version}: {e}{
-                    Colors.END
-                }"
+                f"{Colors.RED}Error querying OSV for {package_name} {version}: {e}"
+                f"{Colors.END}"
             )
             return []
 
@@ -431,9 +430,8 @@ Tyr - Vulnerability Scanner v{__version__}
 
         except Exception as e:
             print(
-                f"{self.colors.YELLOW}Warning: Could not parse {file_path}: {e}{
-                    self.colors.END
-                }"
+                f"{self.colors.YELLOW}Warning: Could not parse {file_path}: {e}"
+                f"{self.colors.END}"
             )
 
         return dependencies

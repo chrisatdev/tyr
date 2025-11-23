@@ -9,4 +9,5 @@
 - [feat] add semantic version by @Christian Benitez
 - [feat] add semantic version by @Christian Benitez
 - [feat] add semantic version by @Christian Benitez
+- [feat] add semantic version by @Christian Benitez
 - New changelog for noviembre 2025

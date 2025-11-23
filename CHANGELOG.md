@@ -6,4 +6,5 @@
 - [docs] update documentation (6 files) by @Christian Benitez
 - [docs] update documentation (4 files) by @Christian Benitez
 ### Added
+- [feat] add semantic version by @Christian Benitez
 - New changelog for noviembre 2025

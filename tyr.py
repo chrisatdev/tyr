@@ -14,6 +14,8 @@ from typing import Dict, List
 
 import requests
 
+__version__ = "1.1.0"
+
 
 class Colors:
     """Terminal color codes"""
@@ -326,14 +328,14 @@ class TyrScanner:
 ║           ██║      ██║   ██║  ██║        ║
 ║           ╚═╝      ╚═╝   ╚═╝  ╚═╝        ║
 ║                                          ║
-║         Security Scanner v1.1.0          ║
+║         Security Scanner v{__version__}          ║
 ║          by Christian Benitez            ║
 ║         cbenitezdiaz@gmail.com           ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 {self.colors.END}
 
-Tyr - Vulnerability Scanner v1.1.0
+Tyr - Vulnerability Scanner v{__version__}
 ==================================================
 """
         print(banner)
@@ -803,7 +805,10 @@ def main():
         help="Enable suspicious code pattern detection",
     )
     parser.add_argument(
-        "-v", "--version", action="version", version="Tyr Vulnerability Scanner v1.1.0"
+        "-v",
+        "--version",
+        action="version",
+        version="Tyr Vulnerability Scanner v{__version__}",
     )
 
     args = parser.parse_args()

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.semantic_release]
+version_variable = [
+    "tyr.py:__version__",
+    "tyr.py:scanner_version",
+]
+version_source = "commit"
+commit_version_number = true
+upload_to_repository = false
+commit_parser = "angular"
+major_on_breaking = true
+
+[tool.semantic_release.branches.main]
+name = "main"
+
+[tool.semantic_release.branches.beta]
+name = "feature/beta"
+prerelease = true
+prerelease_token = "beta"

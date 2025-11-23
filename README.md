@@ -1,19 +1,21 @@
-# Tyr - Escáner de Vulnerabilidades
+# Tyr - Vulnerability Scanner
 
-## 🛡️ ¿Qué es Tyr?
+## 🛡️ What is Tyr?
 
-Tyr es un escáner de vulnerabilidades escrito en Python que analiza proyectos de software en busca de dependencias con vulnerabilidades conocidas. Nombrado en honor al dios nórdico de la guerra y la justicia, Tyr busca proteger tus proyectos identificando posibles puntos débiles en las dependencias.
+Tyr is a vulnerability scanner written in Python that analyzes software projects for vulnerable dependencies and suspicious code patterns. Named after the Norse god of war and justice, Tyr aims to protect your projects by identifying potential weak points in dependencies and code.
 
-## ⚡ Características Principales
+## ⚡ Key Features
 
-- **🔍 Escaneo Automático**: Detecta automáticamente archivos de dependencias en múltiples lenguajes
-- **📊 Base de Datos Actualizada**: Consulta la base de datos oficial de NVD (National Vulnerability Database)
-- **🎨 Reportes Detallados**: Genera reportes en formato Markdown con información completa
-- **🚀 Rendimiento Optimizado**: Soporte para API key de NVD para escaneos más rápidos
-- **🎯 Detección Precisa**: Identifica vulnerabilidades por versión específica
-- **🌈 Interfaz Colorida**: Salida en terminal con colores para mejor legibilidad
+- **🔍 Multi-Source Scanning**: Queries both NVD (National Vulnerability Database) and OSV (Open Source Vulnerabilities) databases
+- **🕵️ Code Pattern Detection**: Scans for suspicious code patterns and potential security issues
+- **📊 Detailed Reports**: Generates comprehensive HTML-colored reports in Markdown format
+- **🚀 Optimized Performance**: Configurable delays and NVD API key support for faster scanning
+- **🎯 Accurate Detection**: Identifies vulnerabilities by specific version across multiple package managers
+- **🌈 Colorful Interface**: Terminal output with colors for better readability
+- **🔗 CVE Links**: Direct links to vulnerability details in NVD database
+- **📈 Smart Reporting**: Intelligent text truncation and severity-based coloring
 
-## 📋 Lenguajes y Gestores Soportados
+## 📋 Supported Languages and Package Managers
 
 - **JavaScript/Node.js**: `package.json`
 - **PHP**: `composer.json`
@@ -23,78 +25,86 @@ Tyr es un escáner de vulnerabilidades escrito en Python que analiza proyectos d
 - **Rust**: `Cargo.toml`
 - **Docker**: `Dockerfile`
 
-## 🚀 Instalación
+## 🚀 Installation
 
-### Prerrequisitos
+### Prerequisites
 
-- Python 3.7 o superior
-- pip (gestor de paquetes de Python)
+- Python 3.7 or higher
+- pip (Python package manager)
 
-### Instalación de Dependencias
+### Dependency Installation
 
 ```bash
 pip install requests
 ```
 
-### Descarga del Script
+### Script Download
 
 ```bash
 git clone https://github.com/chrisatdev/tyr.git
 cd tyr
 ```
 
-## 💻 Uso Básico
+## 💻 Basic Usage
 
-### Escaneo Simple
-
-```bash
-python3 tyr.py /ruta/a/tu/proyecto
-```
-
-### Escaneo con Nombre Personalizado
+### Simple Scan
 
 ```bash
-python3 tyr.py /ruta/a/tu/proyecto -n "Mi Proyecto"
+python3 tyr.py /path/to/your/project
 ```
 
-### Escaneo Rápido con API Key de NVD
+### Scan with Custom Project Name
 
 ```bash
-python3 tyr.py /ruta/a/tu/proyecto -k TU_API_KEY_NVD
+python3 tyr.py /path/to/your/project -n "My Project"
 ```
 
-### Modo Silencioso (Solo Reporte)
+### Scan with NVD API Key (Faster)
 
 ```bash
-python3 tyr.py /ruta/a/tu/proyecto -q
+python3 tyr.py /path/to/your/project -k YOUR_NVD_API_KEY
 ```
 
-## 🎯 Opciones de Línea de Comandos
+### Scan with Code Pattern Detection
 
-| Opción               | Descripción                                             |
-| -------------------- | ------------------------------------------------------- |
-| `project_path`       | Ruta del proyecto a escanear (obligatorio)              |
-| `-n, --project-name` | Nombre del proyecto para el reporte                     |
-| `-o, --output`       | Nombre del archivo de salida (default: `tyr_report.md`) |
-| `-k, --api-key`      | API Key para NVD (reduce el delay entre requests)       |
-| `-q, --quiet`        | Modo silencioso (solo muestra mensaje final)            |
-| `-h, --help`         | Mostrar ayuda y salir                                   |
-| `-v, --version`      | Mostrar versión y salir                                 |
+```bash
+python3 tyr.py /path/to/your/project -c
+```
 
-## 🔑 Obtención de API Key de NVD
+### Quiet Mode (Report Only)
 
-Para obtener una API key y acelerar los escaneos:
+```bash
+python3 tyr.py /path/to/your/project -q
+```
 
-1. Visita [NVD API Key Request](https://nvd.nist.gov/developers/request-an-api-key)
-2. Regístrate en el portal
-3. Solicita tu API key gratuita
-4. Úsala con el parámetro `-k`
+## 🎯 Command Line Options
 
-**Nota**: Con API key el delay entre requests es de 0.6s, sin API key es de 6s.
+| Option               | Description                                          |
+| -------------------- | ---------------------------------------------------- |
+| `project_path`       | Path to project to scan (required)                   |
+| `-n, --project-name` | Project name for report                              |
+| `-o, --output`       | Output filename (default: `tyr_report.md`)           |
+| `-k, --nvd-api-key`  | NVD API key for faster scans                         |
+| `-d, --delay`        | Delay between API requests in seconds (default: 1.0) |
+| `-c, --code-scan`    | Enable suspicious code pattern detection             |
+| `-q, --quiet`        | Quiet mode (only shows final message)                |
+| `-h, --help`         | Show help and exit                                   |
+| `-v, --version`      | Show version and exit                                |
 
-## 📊 Ejemplo de Salida
+## 🔑 Obtaining NVD API Key
 
-### En Terminal
+To get an NVD API key for faster scanning:
+
+1. Visit [NVD API Key Request](https://nvd.nist.gov/developers/request-an-api-key)
+2. Register on the portal
+3. Request your free API key
+4. Use it with the `-k` parameter
+
+**Note**: With API key the delay between requests is 0.6s, without API key it's 6s.
+
+## 📊 Example Output
+
+### Terminal
 
 ```
 ╔══════════════════════════════════════════╗
@@ -106,100 +116,110 @@ Para obtener una API key y acelerar los escaneos:
 ║           ██║      ██║   ██║  ██║        ║
 ║           ╚═╝      ╚═╝   ╚═╝  ╚═╝        ║
 ║                                          ║
-║         Security Scanner v1.0.0          ║
+║         Security Scanner v1.1.0          ║
 ║          by Christian Benitez            ║
 ║         cbenitezdiaz@gmail.com           ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 
-Tyr - Escáner de Vulnerabilidades v1.0.0
+Tyr - Vulnerability Scanner v1.1.0
 ==================================================
-🔍 Escaneando proyecto: mi-proyecto
-📁 Ruta: /ruta/a/mi-proyecto
-📄 Archivos encontrados: 3
-📦 Dependencias encontradas: 15
+🔍 Scanning project: my-project
+📁 Path: /path/to/my-project
+📄 Dependency files found: 3
+📦 Dependencies found: 15
+🕵️ Code pattern scanning: Enabled
 
-🔍 Buscando vulnerabilidades...
-✅ Con API Key: proceso más rápido
+🔍 Searching for vulnerabilities...
+📡 Using multiple sources: NVD and OSV
+✅ Using NVD API Key: faster scanning
 
-🚨 Vulnerabilidades encontradas: 2
-📊 Reporte generado: tyr_report.md
+🚨 Vulnerabilities found: 2
+🕵️ Suspicious patterns found: 3
+📊 Report generated: tyr_report.md
 
-📈 Resumen:
+📈 Summary:
   CRITICAL: 1
   HIGH: 1
+  MEDIUM: 1
+  LOW: 0
 
-📋 Detalles de vulnerabilidades:
-
-▶ flask 1.0.1 - CRITICAL (CVSS: 9.8)
-  CVE: CVE-2018-1000656
-  Tipo: Code Injection
-  Descripción: Flask version Before 0.12.3 contains a CWE-94: Improper Control of Generation of Code vulnerability...
-  Remediation: Update to a patched version
+🕵️ Suspicious patterns:
+  HIGH: 1
+  MEDIUM: 2
+  LOW: 0
 ```
 
-### Reporte Markdown Generado
+### Generated Markdown Report
 
-El script genera un reporte en formato Markdown con tabla de vulnerabilidades y enlaces a los CVEs correspondientes.
+The script generates a comprehensive Markdown report with:
 
-## 🛠️ Estructura del Proyecto
+- **Executive Summary**: Overview of vulnerabilities and code findings
+- **Vulnerability Table**: Color-coded severity levels with direct CVE links
+- **Code Pattern Findings**: Detailed suspicious code patterns with risk levels
+- **Recommendations**: Actionable security improvement suggestions
+
+## 🛠️ Project Structure
 
 ```
 tyr/
-├── tyr.py              # Script principal
-├── README.md           # Este archivo
-└── tyr_report.md       # Reporte de ejemplo (generado)
+├── tyr.py              # Main scanner script
+├── README.md           # This documentation
+├── es/README.md        # This documentation in Spanish
+├── tyr_report.md       # Example generated report
 ```
 
-## 🔧 Desarrollo
+## 🔧 Development
 
-### Estructura del Código
+### Code Structure
 
-- **NVDClient**: Cliente para interactuar con la API de NVD
-- **Colors**: Clase para manejo de colores en terminal
-- **Funciones de parsing**: Para diferentes tipos de archivos de dependencias
-- **Generador de reportes**: Crea reportes en formato Markdown
+- **NVDClient**: Client for interacting with NVD API
+- **OSVClient**: Client for Open Source Vulnerabilities database
+- **CodeScanner**: Class for suspicious code pattern detection
+- **Colors**: Terminal color handling utilities
+- **Parser Functions**: For different dependency file types
+- **Report Generator**: Creates colored Markdown format reports
 
-### Extender Funcionalidad
+### Core Components
 
-Para agregar soporte para nuevos gestores de paquetes:
+- **Multi-Source Scanning**: Queries both NVD and OSV databases for comprehensive coverage
+- **Pattern Detection**: Regex-based detection of common security anti-patterns
+- **Smart Reporting**: Intelligent text processing and HTML-colored output
+- **Error Handling**: Robust error handling with informative messages
 
-1. Agregar el patrón del archivo en `find_dependency_files()`
-2. Implementar el parser en `parse_dependencies()`
-3. Probar con proyectos reales
+## 📝 License
 
-## 📝 Licencia
+This project is under the MIT License. See the `LICENSE` file for details.
 
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+## 🤝 Contributions
 
-## 🤝 Contribuciones
+Contributions are welcome. Please:
 
-Las contribuciones son bienvenidas. Por favor:
+1. Fork the project
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-1. Haz fork del proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
+## ⚠️ Limitations
 
-## ⚠️ Limitaciones
+- Scanning depends on NVD and OSV API availability
+- Without NVD API key, the process may be slow for projects with many dependencies
+- Version vulnerability detection might have false positives/negatives
+- Code pattern detection is based on basic pattern matching
 
-- El escaneo depende de la disponibilidad de la API de NVD
-- Sin API key, el proceso puede ser lento para proyectos con muchas dependencias
-- La detección de versiones vulnerables puede tener falsos positivos/negativos
+## 🆘 Support
 
-## 🆘 Soporte
+If you encounter any issues:
 
-Si encuentras algún problema:
-
-1. Revisa que tengas la última versión
-2. Verifica que tu API key de NVD sea válida (si estás usando una)
-3. Abre un issue en el repositorio con:
-   - Descripción del problema
-   - Comando ejecutado
-   - Salida del error
-   - Sistema operativo y versión de Python
+1. Check that you have the latest version
+2. Verify that your NVD API key is valid (if using one)
+3. Open an issue in the repository with:
+   - Problem description
+   - Command executed
+   - Error output
+   - Operating system and Python version
 
 ---
 
-**Desarrollado por Christian Benitez** - ¿Preguntas? Abre un issue en el repositorio.
+**Developed by Christian Benitez** - Questions? Open an issue in the repository.

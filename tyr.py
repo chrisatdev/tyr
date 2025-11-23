@@ -14,6 +14,8 @@ from typing import Dict, List
 
 import requests
 
+__version__ = "1.1.0"
+
 
 class Colors:
     """Terminal color codes"""
@@ -121,9 +123,8 @@ class NVDClient:
             return vulnerabilities
         except Exception as e:
             print(
-                f"{Colors.RED}Error querying NVD for {package_name} {version}: {e}{
-                    Colors.END
-                }"
+                f"{Colors.RED}Error querying NVD for {package_name} {version}: {e}"
+                f"{Colors.END}"
             )
             return []
 
@@ -172,9 +173,8 @@ class OSVClient:
             return vulnerabilities
         except Exception as e:
             print(
-                f"{Colors.RED}Error querying OSV for {package_name} {version}: {e}{
-                    Colors.END
-                }"
+                f"{Colors.RED}Error querying OSV for {package_name} {version}: {e}"
+                f"{Colors.END}"
             )
             return []
 
@@ -326,14 +326,14 @@ class TyrScanner:
 ║           ██║      ██║   ██║  ██║        ║
 ║           ╚═╝      ╚═╝   ╚═╝  ╚═╝        ║
 ║                                          ║
-║         Security Scanner v1.1.0          ║
+║         Security Scanner v{__version__}          ║
 ║          by Christian Benitez            ║
 ║         cbenitezdiaz@gmail.com           ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 {self.colors.END}
 
-Tyr - Vulnerability Scanner v1.1.0
+Tyr - Vulnerability Scanner v{__version__}
 ==================================================
 """
         print(banner)
@@ -430,9 +430,8 @@ Tyr - Vulnerability Scanner v1.1.0
 
         except Exception as e:
             print(
-                f"{self.colors.YELLOW}Warning: Could not parse {file_path}: {e}{
-                    self.colors.END
-                }"
+                f"{self.colors.YELLOW}Warning: Could not parse {file_path}: {e}"
+                f"{self.colors.END}"
             )
 
         return dependencies
@@ -803,7 +802,10 @@ def main():
         help="Enable suspicious code pattern detection",
     )
     parser.add_argument(
-        "-v", "--version", action="version", version="Tyr Vulnerability Scanner v1.1.0"
+        "-v",
+        "--version",
+        action="version",
+        version="Tyr Vulnerability Scanner v{__version__}",
     )
 
     args = parser.parse_args()

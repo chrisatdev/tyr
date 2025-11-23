@@ -1,0 +1,20 @@
+{
+  "branches": [
+    "main",
+    {
+      "name": "feature/beta",
+      "prerelease": true
+    }
+  ],
+  "plugins": [
+    "semantic-release",
+    [
+      "semantic-release-python",
+      {
+        "versionVariable": [
+          "tyr.py:__version__"
+        ]
+      }
+    ]
+  ]
+}

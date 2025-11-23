@@ -123,9 +123,8 @@ class NVDClient:
             return vulnerabilities
         except Exception as e:
             print(
-                f"{Colors.RED}Error querying NVD for {package_name} {version}: {e}{
-                    Colors.END
-                }"
+                f"{Colors.RED}Error querying NVD for {package_name} {version}: {e}"
+                f"{Colors.END}"
             )
             return []
 

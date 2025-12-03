@@ -524,16 +524,74 @@ Tyr - Vulnerability Scanner v{__version__}
             return "Security Issue"
 
     def assess_severity(self, vulnerability: Dict) -> str:
-        """Assess vulnerability severity based on CVSS score"""
+        """Assess vulnerability severity based on CVSS score with improved logic"""
         cvss_score = vulnerability.get("cvss_score", 0.0)
+        description = (
+            vulnerability.get("description") or vulnerability.get("summary", "")
+        ).lower()
 
+        # First, use CVSS score if available
         if cvss_score >= 9.0:
             return "CRITICAL"
         elif cvss_score >= 7.0:
             return "HIGH"
         elif cvss_score >= 4.0:
             return "MEDIUM"
+        elif cvss_score > 0.0:
+            return "LOW"
         else:
+            # If no CVSS score, analyze description for severity indicators
+            # Check for critical keywords
+            critical_keywords = [
+                "critical",
+                "remote code execution",
+                "rce",
+                "arbitrary code execution",
+                "privilege escalation",
+                "root access",
+                "9.8",
+                "9.9",
+                "10.0",
+            ]
+            if any(keyword in description for keyword in critical_keywords):
+                return "CRITICAL"
+
+            # Check for high keywords
+            high_keywords = [
+                "high",
+                "sql injection",
+                "sqli",
+                "xss",
+                "cross-site scripting",
+                "csrf",
+                "cross-site request forgery",
+                "7.0",
+                "7.5",
+                "8.0",
+                "8.5",
+                "8.9",
+            ]
+            if any(keyword in description for keyword in high_keywords):
+                return "HIGH"
+
+            # Check for medium keywords
+            medium_keywords = [
+                "medium",
+                "information disclosure",
+                "info disclosure",
+                "denial of service",
+                "dos",
+                "4.0",
+                "5.0",
+                "5.5",
+                "6.0",
+                "6.5",
+                "6.9",
+            ]
+            if any(keyword in description for keyword in medium_keywords):
+                return "MEDIUM"
+
+            # Default to LOW for anything else
             return "LOW"
 
     def generate_report(
@@ -558,6 +616,11 @@ Tyr - Vulnerability Scanner v{__version__}
             high_count = sum(1 for v in vulnerabilities if v["severity"] == "HIGH")
             medium_count = sum(1 for v in vulnerabilities if v["severity"] == "MEDIUM")
             low_count = sum(1 for v in vulnerabilities if v["severity"] == "LOW")
+            unknown_count = sum(
+                1
+                for v in vulnerabilities
+                if v["severity"] not in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+            )
 
             f.write("## 📊 Executive Summary\n\n")
             f.write(f"- **Total Vulnerabilities:** {vuln_count}\n")
@@ -565,6 +628,8 @@ Tyr - Vulnerability Scanner v{__version__}
             f.write(f"- **High:** {high_count}\n")
             f.write(f"- **Medium:** {medium_count}\n")
             f.write(f"- **Low:** {low_count}\n")
+            if unknown_count > 0:
+                f.write(f"- **Unknown:** {unknown_count}\n")
 
             if code_findings:
                 finding_count = len(code_findings)
@@ -595,6 +660,18 @@ Tyr - Vulnerability Scanner v{__version__}
                     "UNKNOWN": "#757575",  # Gray
                 }
 
+                # Sort vulnerabilities by severity in order: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+                severity_order = {
+                    "CRITICAL": 0,
+                    "HIGH": 1,
+                    "MEDIUM": 2,
+                    "LOW": 3,
+                    "UNKNOWN": 4,
+                }
+                sorted_vulnerabilities = sorted(
+                    vulnerabilities, key=lambda x: severity_order.get(x["severity"], 5)
+                )
+
                 f.write(
                     "| Severity | Package | Version | CVE | Type | Description | Remediation |\n"
                 )
@@ -602,11 +679,18 @@ Tyr - Vulnerability Scanner v{__version__}
                     "|----------|---------|---------|-----|------|-------------|-------------|\n"
                 )
 
-                for vuln in vulnerabilities:
-                    # CVE link that opens in a new tab
-                    cve_link = f"[{vuln['cve']}](https://nvd.nist.gov/vuln/detail/{
-                        vuln['cve']
-                    })"
+                for vuln in sorted_vulnerabilities:
+                    # Dynamic CVE link based on source
+                    if vuln["cve"].startswith("CVE-"):
+                        cve_link = f"[{vuln['cve']}](https://nvd.nist.gov/vuln/detail/{
+                            vuln['cve']
+                        })"
+                    elif vuln["source"] == "OSV":
+                        cve_link = f"[{vuln['cve']}](https://osv.dev/vulnerability/{
+                            vuln['cve']
+                        })"
+                    else:
+                        cve_link = vuln["cve"]
 
                     # Intelligent truncation of the description
                     short_desc = smart_truncate(vuln["description"])

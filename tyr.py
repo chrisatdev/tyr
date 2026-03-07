@@ -5,16 +5,28 @@ Security scanner that analyzes projects for vulnerable dependencies and suspicio
 """
 
 import argparse
+import importlib
+import inspect
 import json
+import os
 import re
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import requests
 
-__version__ = "1.1.0"
+# Import plugin base classes
+try:
+    from plugins.base import VulnerabilityPlugin
+    from plugins.base_analyzer import AnalyzerPlugin
+except ImportError as e:
+    print(f"❌ Error: Could not import plugin modules: {e}")
+    print("Make sure the plugins/ directory exists and contains base.py and base_analyzer.py")
+    sys.exit(1)
+
+__version__ = "1.3.0"
 
 
 class Colors:
@@ -55,128 +67,182 @@ def smart_truncate(text, max_length=100):
         return truncated + "..."
 
 
-class NVDClient:
-    """Client for National Vulnerability Database"""
+class PluginManager:
+    """Manages vulnerability scanner plugins and code analyzers"""
 
-    def __init__(self, api_key: str = None, delay: float = 6.0):
-        self.base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-        self.api_key = api_key
-        # Reduced delay if API key is provided
-        self.delay = 0.6 if api_key else delay
+    def __init__(self, verbose: bool = False):
+        self.plugins: Dict[str, VulnerabilityPlugin] = {}
+        self.analyzers: Dict[str, AnalyzerPlugin] = {}
+        self.verbose = verbose
+        self.colors = Colors()
 
-    def query_vulnerabilities(self, package_name: str, version: str) -> List[Dict]:
-        """
-        Query NVD database for vulnerabilities in a specific package version
-        """
-        # NVD search by keyword (package name and version)
-        keywords = f"{package_name} {version}"
-        params = {"keywordSearch": keywords, "resultsPerPage": 20}
+    def discover_plugins(self):
+        """Automatically discover and load plugins from the plugins directory"""
+        plugins_dir = Path(__file__).parent / "plugins"
 
-        headers = {}
-        if self.api_key:
-            headers["apiKey"] = self.api_key
+        if not plugins_dir.exists():
+            if self.verbose:
+                print(f"{self.colors.YELLOW}⚠️  Plugins directory not found: {plugins_dir}{self.colors.END}")
+            return
 
-        try:
-            response = requests.get(self.base_url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+        # Get all Python files in plugins directory (except base files and __init__.py)
+        plugin_files = [
+            f for f in plugins_dir.glob("*.py")
+            if f.name not in ["__init__.py", "base.py", "base_analyzer.py"]
+        ]
 
-            # Add delay to respect rate limits
-            time.sleep(self.delay)
+        for plugin_file in plugin_files:
+            try:
+                # Import the module
+                module_name = f"plugins.{plugin_file.stem}"
+                module = importlib.import_module(module_name)
 
-            vulnerabilities = []
-            for item in data.get("vulnerabilities", []):
-                cve_item = item.get("cve", {})
-                if cve_item:
-                    # Get CVSS score if available
-                    metrics = cve_item.get("metrics", {})
-                    cvss_score = 0.0
+                # Find classes that inherit from VulnerabilityPlugin or AnalyzerPlugin
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    # Check if it's a VulnerabilityPlugin
+                    if (
+                        issubclass(obj, VulnerabilityPlugin)
+                        and obj != VulnerabilityPlugin
+                        and not issubclass(obj, AnalyzerPlugin)  # Avoid double-loading
+                    ):
+                        # Instantiate the plugin (without config for now)
+                        plugin_instance = obj()
+                        self.plugins[plugin_instance.name] = plugin_instance
 
-                    # Try different metric versions
-                    for metric_type in [
-                        "cvssMetricV31",
-                        "cvssMetricV30",
-                        "cvssMetricV2",
-                    ]:
-                        if metric_type in metrics and metrics[metric_type]:
-                            cvss_score = (
-                                metrics[metric_type][0]
-                                .get("cvssData", {})
-                                .get("baseScore", 0.0)
-                            )
-                            break
+                        if self.verbose:
+                            print(f"{self.colors.GREEN}✅ Loaded vulnerability plugin: {plugin_instance.name}{self.colors.END}")
+                    
+                    # Check if it's an AnalyzerPlugin
+                    elif (
+                        issubclass(obj, AnalyzerPlugin)
+                        and obj != AnalyzerPlugin
+                    ):
+                        # Instantiate the analyzer (without config for now)
+                        analyzer_instance = obj()
+                        self.analyzers[analyzer_instance.name] = analyzer_instance
 
-                    vulnerability = {
-                        "id": cve_item.get("id", ""),
-                        "source": "NVD",
-                        "description": cve_item.get("descriptions", [{}])[0].get(
-                            "value", ""
-                        ),
-                        "cvss_score": cvss_score,
-                        "references": [
-                            ref.get("url") for ref in cve_item.get("references", [])
-                        ],
-                        "published": cve_item.get("published", ""),
-                    }
-                    vulnerabilities.append(vulnerability)
+                        if self.verbose:
+                            print(f"{self.colors.GREEN}✅ Loaded analyzer plugin: {analyzer_instance.name}{self.colors.END}")
 
-            return vulnerabilities
-        except Exception as e:
-            print(
-                f"{Colors.RED}Error querying NVD for {package_name} {version}: {e}"
-                f"{Colors.END}"
-            )
-            return []
+            except Exception as e:
+                if self.verbose:
+                    print(f"{self.colors.RED}❌ Failed to load plugin {plugin_file.name}: {e}{self.colors.END}")
 
+    def configure_plugin(self, plugin_name: str, **config):
+        """Configure a plugin with specific settings"""
+        if plugin_name in self.plugins:
+            # Re-instantiate the plugin with configuration
+            plugin_class = self.plugins[plugin_name].__class__
+            self.plugins[plugin_name] = plugin_class(**config)
+    
+    def configure_analyzer(self, analyzer_name: str, **config):
+        """Configure an analyzer with specific settings"""
+        if analyzer_name in self.analyzers:
+            # Re-instantiate the analyzer with configuration
+            analyzer_class = self.analyzers[analyzer_name].__class__
+            self.analyzers[analyzer_name] = analyzer_class(**config)
 
-class OSVClient:
-    """Client for Open Source Vulnerabilities database"""
+    def get_plugin(self, name: str) -> VulnerabilityPlugin:
+        """Get a plugin by name"""
+        return self.plugins.get(name)
+    
+    def get_analyzer(self, name: str) -> AnalyzerPlugin:
+        """Get an analyzer by name"""
+        return self.analyzers.get(name)
 
-    def __init__(self, delay: float = 1.0):
-        self.base_url = "https://api.osv.dev/v1/query"
-        self.delay = delay
+    def get_all_plugins(self) -> List[VulnerabilityPlugin]:
+        """Get all loaded vulnerability plugins"""
+        return list(self.plugins.values())
+    
+    def get_all_analyzers(self) -> List[AnalyzerPlugin]:
+        """Get all loaded analyzers"""
+        return list(self.analyzers.values())
 
-    def query_vulnerabilities(self, package_name: str, version: str) -> List[Dict]:
-        """
-        Query OSV database for vulnerabilities in a specific package version
-        """
-        query = {"package": {"name": package_name}, "version": version}
+    def get_available_plugins(self) -> List[VulnerabilityPlugin]:
+        """Get only vulnerability plugins that are available and properly configured"""
+        available = []
+        for plugin in self.plugins.values():
+            if plugin.is_available():
+                available.append(plugin)
+            elif self.verbose:
+                print(f"{self.colors.YELLOW}⚠️  Plugin '{plugin.name}' is not available{self.colors.END}")
+        return available
+    
+    def get_available_analyzers(self) -> List[AnalyzerPlugin]:
+        """Get only analyzers that are available"""
+        available = []
+        for analyzer in self.analyzers.values():
+            if analyzer.is_available():
+                available.append(analyzer)
+            elif self.verbose:
+                print(f"{self.colors.YELLOW}⚠️  Analyzer '{analyzer.name}' is not available{self.colors.END}")
+        return available
 
-        try:
-            response = requests.post(self.base_url, json=query)
-            response.raise_for_status()
-            data = response.json()
+    def list_plugins(self):
+        """Display information about all available plugins and analyzers"""
+        
+        # Display Vulnerability Plugins
+        print(f"\n{self.colors.CYAN}{self.colors.BOLD}Vulnerability Scanner Plugins:{self.colors.END}\n")
 
-            # Add delay to be respectful to the API
-            time.sleep(self.delay)
+        if not self.plugins:
+            print(f"{self.colors.YELLOW}No vulnerability plugins found.{self.colors.END}\n")
+        else:
+            print(f"{'Plugin Name':<20} {'Display Name':<35} {'Version':<10} {'Status':<12} {'API Key'}")
+            print("-" * 95)
 
-            vulnerabilities = []
-            for vuln in data.get("vulns", []):
-                vulnerability = {
-                    "id": vuln.get("id", ""),
-                    "source": "OSV",
-                    "summary": vuln.get("summary", ""),
-                    "details": vuln.get("details", ""),
-                    "references": vuln.get("references", []),
-                    "published": vuln.get("published", ""),
-                    "modified": vuln.get("modified", ""),
-                }
+            for plugin in sorted(self.plugins.values(), key=lambda p: p.name):
+                # Check availability
+                status = f"{self.colors.GREEN}Available{self.colors.END}" if plugin.is_available() else f"{self.colors.RED}Unavailable{self.colors.END}"
+                
+                # API key requirement
+                api_key_info = plugin.api_key_env_var if plugin.requires_api_key else "Not required"
+                
+                # Check if API key is set
+                if plugin.requires_api_key and plugin.api_key_env_var:
+                    if os.getenv(plugin.api_key_env_var):
+                        api_key_info += f" {self.colors.GREEN}(set){self.colors.END}"
+                    else:
+                        api_key_info += f" {self.colors.YELLOW}(not set){self.colors.END}"
 
-                # Try to extract CVSS score if available
-                if "database_specific" in vuln and "cvss" in vuln["database_specific"]:
-                    vulnerability["cvss_score"] = vuln["database_specific"]["cvss"]
-                else:
-                    vulnerability["cvss_score"] = 0.0
+                print(f"{plugin.name:<20} {plugin.display_name:<35} {plugin.version:<10} {status:<20} {api_key_info}")
 
-                vulnerabilities.append(vulnerability)
+            print(f"\n{self.colors.BOLD}Description:{self.colors.END}")
+            for plugin in sorted(self.plugins.values(), key=lambda p: p.name):
+                print(f"  • {self.colors.CYAN}{plugin.name}{self.colors.END}: {plugin.description}")
 
-            return vulnerabilities
-        except Exception as e:
-            print(
-                f"{Colors.RED}Error querying OSV for {package_name} {version}: {e}"
-                f"{Colors.END}"
-            )
-            return []
+            print(f"\n{self.colors.BOLD}Usage:{self.colors.END}")
+            print(f"  Use specific plugins:  python tyr.py /path/to/project --plugins nvd,osv")
+            print(f"  Use all plugins:       python tyr.py /path/to/project --plugins all")
+            print(f"  Default (no --plugins): Uses 'nvd' automatically")
+        
+        # Display Code Analyzers
+        print(f"\n{self.colors.CYAN}{self.colors.BOLD}Code Analyzer Plugins:{self.colors.END}\n")
+        
+        if not self.analyzers:
+            print(f"{self.colors.YELLOW}No analyzer plugins found.{self.colors.END}\n")
+        else:
+            print(f"{'Analyzer Name':<20} {'Display Name':<35} {'Version':<10} {'Status'}")
+            print("-" * 80)
+            
+            for analyzer in sorted(self.analyzers.values(), key=lambda a: a.name):
+                status = f"{self.colors.GREEN}Available{self.colors.END}" if analyzer.is_available() else f"{self.colors.RED}Unavailable{self.colors.END}"
+                print(f"{analyzer.name:<20} {analyzer.display_name:<35} {analyzer.version:<10} {status}")
+            
+            print(f"\n{self.colors.BOLD}Description:{self.colors.END}")
+            for analyzer in sorted(self.analyzers.values(), key=lambda a: a.name):
+                print(f"  • {self.colors.CYAN}{analyzer.name}{self.colors.END}: {analyzer.description}")
+                if analyzer.plugin_arguments:
+                    print(f"    {self.colors.BOLD}Arguments:{self.colors.END}")
+                    for arg_name, arg_info in analyzer.plugin_arguments.items():
+                        default = arg_info.get('default', 'N/A')
+                        arg_type = arg_info.get('type', str).__name__
+                        print(f"      --{arg_name} ({arg_type}, default: {default})")
+            
+            print(f"\n{self.colors.BOLD}Usage:{self.colors.END}")
+            print(f"  Use specific analyzers: python tyr.py /path/to/project --analyzers code-smell,secrets-scanner")
+            print(f"  With custom arguments:  python tyr.py /path/to/project --analyzers code-smell --max-function-lines 30")
+        
+        print()
 
 
 class CodeScanner:
@@ -236,9 +302,7 @@ class CodeScanner:
         ]
 
     def scan_file(self, file_path: Path) -> List[Dict]:
-        """
-        Scan a single file for suspicious patterns
-        """
+        """Scan a single file for suspicious patterns"""
         findings = []
 
         try:
@@ -268,9 +332,7 @@ class CodeScanner:
         return findings
 
     def scan_directory(self, directory: Path) -> List[Dict]:
-        """
-        Scan all code files in directory for suspicious patterns
-        """
+        """Scan all code files in directory for suspicious patterns"""
         findings = []
         code_extensions = {
             ".py",
@@ -300,18 +362,80 @@ class CodeScanner:
 
 
 class TyrScanner:
-    """Main vulnerability scanner class"""
+    """Main vulnerability scanner class with plugin support"""
 
     def __init__(
         self,
+        plugin_names: List[str] = None,
+        analyzer_names: List[str] = None,
         nvd_api_key: str = None,
+        github_token: str = None,
         delay: float = 1.0,
         enable_code_scan: bool = False,
+        verbose: bool = False,
+        **analyzer_args  # Custom arguments for analyzers
     ):
-        self.nvd_client = NVDClient(nvd_api_key, delay)
-        self.osv_client = OSVClient(delay)
-        self.code_scanner = CodeScanner() if enable_code_scan else None
         self.colors = Colors()
+        self.verbose = verbose
+        self.plugin_manager = PluginManager(verbose=verbose)
+        self.code_scanner = CodeScanner() if enable_code_scan else None
+        
+        # Discover all available plugins and analyzers
+        self.plugin_manager.discover_plugins()
+        
+        # Configure plugins with API keys if provided
+        if nvd_api_key and "nvd" in self.plugin_manager.plugins:
+            self.plugin_manager.configure_plugin("nvd", api_key=nvd_api_key, delay=delay)
+        
+        if github_token and "github-advisory" in self.plugin_manager.plugins:
+            self.plugin_manager.configure_plugin("github-advisory", api_key=github_token, delay=delay)
+        
+        # Determine which vulnerability plugins to use
+        # DEFAULT: Use NVD if no plugins specified
+        self.enabled_plugins = []
+        if plugin_names is None:
+            # Use NVD by default
+            if "nvd" in self.plugin_manager.plugins:
+                nvd_plugin = self.plugin_manager.get_plugin("nvd")
+                if nvd_plugin and nvd_plugin.is_available():
+                    self.enabled_plugins.append(nvd_plugin)
+                    if verbose:
+                        print(f"{self.colors.CYAN}ℹ️  Using NVD plugin by default{self.colors.END}")
+        elif plugin_names:
+            if "all" in plugin_names:
+                self.enabled_plugins = self.plugin_manager.get_available_plugins()
+            else:
+                for name in plugin_names:
+                    plugin = self.plugin_manager.get_plugin(name)
+                    if plugin and plugin.is_available():
+                        self.enabled_plugins.append(plugin)
+                    elif plugin:
+                        print(f"{self.colors.YELLOW}⚠️  Plugin '{name}' is not available{self.colors.END}")
+                    else:
+                        print(f"{self.colors.RED}❌ Plugin '{name}' not found{self.colors.END}")
+        
+        # Determine which analyzers to use
+        self.enabled_analyzers = []
+        if analyzer_names:
+            if "all" in analyzer_names:
+                self.enabled_analyzers = self.plugin_manager.get_available_analyzers()
+                # Configure all analyzers with provided arguments
+                for analyzer in self.enabled_analyzers:
+                    if analyzer_args:
+                        self.plugin_manager.configure_analyzer(analyzer.name, verbose=verbose, **analyzer_args)
+            else:
+                for name in analyzer_names:
+                    analyzer = self.plugin_manager.get_analyzer(name)
+                    if analyzer and analyzer.is_available():
+                        # Configure analyzer with custom arguments
+                        if analyzer_args:
+                            self.plugin_manager.configure_analyzer(name, verbose=verbose, **analyzer_args)
+                            analyzer = self.plugin_manager.get_analyzer(name)  # Get reconfigured instance
+                        self.enabled_analyzers.append(analyzer)
+                    elif analyzer:
+                        print(f"{self.colors.YELLOW}⚠️  Analyzer '{name}' is not available{self.colors.END}")
+                    else:
+                        print(f"{self.colors.RED}❌ Analyzer '{name}' not found{self.colors.END}")
 
     def print_banner(self):
         """Print the application banner"""
@@ -450,8 +574,12 @@ Tyr - Vulnerability Scanner v{__version__}
         return version.strip()
 
     def scan_vulnerabilities(self, dependencies: List[Dict]) -> List[Dict]:
-        """Scan dependencies for vulnerabilities using multiple sources"""
+        """Scan dependencies for vulnerabilities using enabled plugins"""
         vulnerabilities = []
+
+        if not self.enabled_plugins:
+            print(f"{self.colors.YELLOW}ℹ️  No plugins enabled. Use --plugins to enable vulnerability scanning.{self.colors.END}")
+            return []
 
         for dep in dependencies:
             clean_ver = self.clean_version(dep["version"])
@@ -460,38 +588,40 @@ Tyr - Vulnerability Scanner v{__version__}
 
             print(f"🔍 Checking {dep['name']} {clean_ver}...")
 
-            # Query both NVD and OSV
-            nvd_vulns = self.nvd_client.query_vulnerabilities(dep["name"], clean_ver)
-            osv_vulns = self.osv_client.query_vulnerabilities(dep["name"], clean_ver)
-
-            # Combine and deduplicate vulnerabilities
-            all_vulns = nvd_vulns + osv_vulns
+            # Query all enabled plugins
             seen_ids = set()
-
-            for vuln in all_vulns:
-                vuln_id = vuln.get("id")
-                if vuln_id and vuln_id not in seen_ids:
-                    seen_ids.add(vuln_id)
-
-                    # Determine vulnerability type based on description
-                    vuln_type = self.determine_vulnerability_type(
-                        vuln.get("description") or vuln.get("summary", "")
+            for plugin in self.enabled_plugins:
+                try:
+                    plugin_vulns = plugin.query_vulnerabilities(
+                        dep["name"], clean_ver, dep.get("type")
                     )
 
-                    vulnerability = {
-                        "package": dep["name"],
-                        "version": clean_ver,
-                        "cve": vuln_id,
-                        "source": vuln.get("source", "Unknown"),
-                        "type": vuln_type,
-                        "description": vuln.get("description")
-                        or vuln.get("summary", "No description available"),
-                        "cvss_score": vuln.get("cvss_score", 0.0),
-                        "severity": self.assess_severity(vuln),
-                        "references": vuln.get("references", []),
-                        "remediation": "Update to a patched version",
-                    }
-                    vulnerabilities.append(vulnerability)
+                    for vuln in plugin_vulns:
+                        vuln_id = vuln.get("id")
+                        # Deduplicate by ID
+                        if vuln_id and vuln_id not in seen_ids:
+                            seen_ids.add(vuln_id)
+
+                            # Ensure required fields
+                            vulnerability = {
+                                "package": dep["name"],
+                                "version": clean_ver,
+                                "cve": vuln_id,
+                                "source": vuln.get("source", plugin.name),
+                                "type": self.determine_vulnerability_type(
+                                    vuln.get("description", "")
+                                ),
+                                "description": vuln.get("description", "No description available"),
+                                "cvss_score": vuln.get("cvss_score", 0.0),
+                                "severity": vuln.get("severity", "UNKNOWN"),
+                                "references": vuln.get("references", []),
+                                "remediation": vuln.get("remediation", "Update to a patched version"),
+                            }
+                            vulnerabilities.append(vulnerability)
+
+                except Exception as e:
+                    if self.verbose:
+                        print(f"{self.colors.RED}❌ Error with plugin {plugin.name}: {e}{self.colors.END}")
 
         return vulnerabilities
 
@@ -523,77 +653,6 @@ Tyr - Vulnerability Scanner v{__version__}
         else:
             return "Security Issue"
 
-    def assess_severity(self, vulnerability: Dict) -> str:
-        """Assess vulnerability severity based on CVSS score with improved logic"""
-        cvss_score = vulnerability.get("cvss_score", 0.0)
-        description = (
-            vulnerability.get("description") or vulnerability.get("summary", "")
-        ).lower()
-
-        # First, use CVSS score if available
-        if cvss_score >= 9.0:
-            return "CRITICAL"
-        elif cvss_score >= 7.0:
-            return "HIGH"
-        elif cvss_score >= 4.0:
-            return "MEDIUM"
-        elif cvss_score > 0.0:
-            return "LOW"
-        else:
-            # If no CVSS score, analyze description for severity indicators
-            # Check for critical keywords
-            critical_keywords = [
-                "critical",
-                "remote code execution",
-                "rce",
-                "arbitrary code execution",
-                "privilege escalation",
-                "root access",
-                "9.8",
-                "9.9",
-                "10.0",
-            ]
-            if any(keyword in description for keyword in critical_keywords):
-                return "CRITICAL"
-
-            # Check for high keywords
-            high_keywords = [
-                "high",
-                "sql injection",
-                "sqli",
-                "xss",
-                "cross-site scripting",
-                "csrf",
-                "cross-site request forgery",
-                "7.0",
-                "7.5",
-                "8.0",
-                "8.5",
-                "8.9",
-            ]
-            if any(keyword in description for keyword in high_keywords):
-                return "HIGH"
-
-            # Check for medium keywords
-            medium_keywords = [
-                "medium",
-                "information disclosure",
-                "info disclosure",
-                "denial of service",
-                "dos",
-                "4.0",
-                "5.0",
-                "5.5",
-                "6.0",
-                "6.5",
-                "6.9",
-            ]
-            if any(keyword in description for keyword in medium_keywords):
-                return "MEDIUM"
-
-            # Default to LOW for anything else
-            return "LOW"
-
     def generate_report(
         self,
         vulnerabilities: List[Dict],
@@ -606,7 +665,15 @@ Tyr - Vulnerability Scanner v{__version__}
         with open(output_file, "w") as f:
             f.write(f"# Tyr Security Report - {project_name}\n\n")
             f.write(f"**Scan Date:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"**Project Path:** {project_path}\n\n")
+            f.write(f"**Project Path:** {project_path}\n")
+            
+            # Plugin information
+            if self.enabled_plugins:
+                plugin_names = ", ".join([p.display_name for p in self.enabled_plugins])
+                f.write(f"**Plugins Used:** {plugin_names}\n")
+            else:
+                f.write("**Plugins Used:** None (basic scan only)\n")
+            f.write("\n")
 
             # Vulnerability Summary
             vuln_count = len(vulnerabilities)
@@ -660,7 +727,7 @@ Tyr - Vulnerability Scanner v{__version__}
                     "UNKNOWN": "#757575",  # Gray
                 }
 
-                # Sort vulnerabilities by severity in order: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+                # Sort vulnerabilities by severity
                 severity_order = {
                     "CRITICAL": 0,
                     "HIGH": 1,
@@ -673,54 +740,46 @@ Tyr - Vulnerability Scanner v{__version__}
                 )
 
                 f.write(
-                    "| Severity | Package | Version | CVE | Type | Description | Remediation |\n"
+                    "| Severity | Package | Version | CVE | Source | Type | Description | Remediation |\n"
                 )
                 f.write(
-                    "|----------|---------|---------|-----|------|-------------|-------------|\n"
+                    "|----------|---------|---------|-----|--------|------|-------------|-------------|\n"
                 )
 
                 for vuln in sorted_vulnerabilities:
                     # Dynamic CVE link based on source
-                    if vuln["cve"].startswith("CVE-"):
-                        cve_link = f"[{vuln['cve']}](https://nvd.nist.gov/vuln/detail/{
-                            vuln['cve']
-                        })"
-                    elif vuln["source"] == "OSV":
-                        cve_link = f"[{vuln['cve']}](https://osv.dev/vulnerability/{
-                            vuln['cve']
-                        })"
+                    cve_id = vuln['cve']
+                    if cve_id.startswith("CVE-"):
+                        cve_link = f"[{cve_id}](https://nvd.nist.gov/vuln/detail/{cve_id})"
+                    elif cve_id.startswith("GHSA-"):
+                        cve_link = f"[{cve_id}](https://github.com/advisories/{cve_id})"
+                    elif vuln["source"] == "osv":
+                        cve_link = f"[{cve_id}](https://osv.dev/vulnerability/{cve_id})"
                     else:
-                        cve_link = vuln["cve"]
+                        cve_link = cve_id
 
                     # Intelligent truncation of the description
                     short_desc = smart_truncate(vuln["description"])
 
                     # Severity with HTML color
                     color = severity_colors.get(vuln["severity"], "#000000")
-                    severity_html = f'<span style="color: {color}; font-weight: bold;">{
-                        vuln["severity"]
-                    }</span>'
+                    severity_html = f'<span style="color: {color}; font-weight: bold;">{vuln["severity"]}</span>'
 
                     f.write(
-                        f"| {severity_html} | {vuln['package']} | {vuln['version']} | {
-                            cve_link
-                        } | {vuln['type']} | {short_desc} | {vuln['remediation']} |\n"
+                        f"| {severity_html} | {vuln['package']} | {vuln['version']} | {cve_link} | {vuln['source']} | {vuln['type']} | {short_desc} | {vuln['remediation']} |\n"
                     )
             else:
                 f.write("✅ No vulnerabilities found in dependencies.\n")
 
-            # Code Findings Section - Sorted by risk level
+            # Code Findings Section
             if code_findings:
-                # Colors for each severity level
                 risk_colors = {
-                    "CRITICAL": "#FF4444",  # Intense red
-                    "HIGH": "#FF6B35",  # Reddish orange
-                    "MEDIUM": "#FFA500",  # Orange
-                    "LOW": "#4CAF50",  # Green
-                    "UNKNOWN": "#757575",  # Gray
+                    "CRITICAL": "#FF4444",
+                    "HIGH": "#FF6B35",
+                    "MEDIUM": "#FFA500",
+                    "LOW": "#4CAF50",
                 }
 
-                # Sort code findings by risk level in order: CRITICAL, HIGH, MEDIUM, LOW
                 risk_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
                 sorted_findings = sorted(
                     code_findings, key=lambda x: risk_order.get(x["risk"], 4)
@@ -735,17 +794,10 @@ Tyr - Vulnerability Scanner v{__version__}
                 )
 
                 for finding in sorted_findings:
-                    # Risk with HTML color
                     color = risk_colors.get(finding["risk"], "#000000")
-                    risk_html = f'<span style="color: {color}; font-weight: bold;">{
-                        finding["risk"]
-                    }</span>'
+                    risk_html = f'<span style="color: {color}; font-weight: bold;">{finding["risk"]}</span>'
                     f.write(
-                        f"| {finding['file']} | {finding['line']} | {
-                            finding['pattern']
-                        } | {risk_html} | {finding['description']} | {
-                            finding['recommendation']
-                        } |\n"
+                        f"| {finding['file']} | {finding['line']} | {finding['pattern']} | {risk_html} | {finding['description']} | {finding['recommendation']} |\n"
                     )
 
             f.write("\n## 🔧 Recommendations\n\n")
@@ -769,24 +821,28 @@ Tyr - Vulnerability Scanner v{__version__}
         if not quiet:
             self.print_banner()
 
-        project_path = Path(project_path)
-        if not project_path.exists():
+        project_path_obj = Path(project_path)
+        if not project_path_obj.exists():
             print(
-                f"{self.colors.RED}Error: Project path {project_path} does not exist{
-                    self.colors.END
-                }"
+                f"{self.colors.RED}Error: Project path {project_path} does not exist{self.colors.END}"
             )
             sys.exit(1)
 
         if not project_name:
-            project_name = project_path.name
+            project_name = project_path_obj.name
 
         if not quiet:
             print(f"🔍 Scanning project: {project_name}")
             print(f"📁 Path: {project_path}")
+            
+            if self.enabled_plugins:
+                plugin_names = ", ".join([p.name for p in self.enabled_plugins])
+                print(f"🔌 Active plugins: {plugin_names}")
+            else:
+                print(f"🔌 Active plugins: None (use --plugins to enable)")
 
         # Find and parse dependency files
-        dependency_files = self.find_dependency_files(project_path)
+        dependency_files = self.find_dependency_files(project_path_obj)
         if not quiet:
             print(f"📄 Dependency files found: {len(dependency_files)}")
 
@@ -803,16 +859,14 @@ Tyr - Vulnerability Scanner v{__version__}
         if self.code_scanner:
             if not quiet:
                 print("🕵️ Scanning for suspicious code patterns...")
-            code_findings = self.code_scanner.scan_directory(project_path)
+            code_findings = self.code_scanner.scan_directory(project_path_obj)
             if not quiet:
                 print(f"🔍 Suspicious patterns found: {len(code_findings)}")
 
-        # Scan for vulnerabilities
-        if not quiet:
+        # Scan for vulnerabilities using plugins
+        if not quiet and self.enabled_plugins:
             print("🔍 Searching for vulnerabilities...")
-            print("📡 Using multiple sources: NVD and OSV")
-            if self.nvd_client.api_key:
-                print("✅ Using NVD API Key: faster scanning")
+            print(f"📡 Using plugins: {', '.join([p.display_name for p in self.enabled_plugins])}")
 
         vulnerabilities = self.scan_vulnerabilities(dependencies)
 
@@ -845,35 +899,79 @@ Tyr - Vulnerability Scanner v{__version__}
 
             # Code findings breakdown
             if code_findings:
+                critical_risk = sum(1 for cf in code_findings if cf["risk"] == "CRITICAL")
                 high_risk = sum(1 for cf in code_findings if cf["risk"] == "HIGH")
                 medium_risk = sum(1 for cf in code_findings if cf["risk"] == "MEDIUM")
                 low_risk = sum(1 for cf in code_findings if cf["risk"] == "LOW")
 
-                print(f"  SUSPICIOUS: {len(code_findings)}")
-                print(f"    HIGH: {high_risk}")
-                print(f"    MEDIUM: {medium_risk}")
-                print(f"    LOW: {low_risk}")
+                print(f"\n🕵️ Code Patterns:")
+                print(f"  CRITICAL: {critical_risk}")
+                print(f"  HIGH: {high_risk}")
+                print(f"  MEDIUM: {medium_risk}")
+                print(f"  LOW: {low_risk}")
 
 
 def main():
-    # Print banner when help is requested
-    if "-h" in sys.argv or "--help" in sys.argv:
-        scanner = TyrScanner()
-        scanner.print_banner()
+    parser = argparse.ArgumentParser(
+        description="Tyr - Vulnerability Scanner with Plugin Support",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  List available plugins and analyzers:
+    python tyr.py --list-plugins
 
-    parser = argparse.ArgumentParser(description="Tyr - Vulnerability Scanner")
-    parser.add_argument("project_path", help="Path to the project to scan")
+  Basic scan (uses NVD by default):
+    python tyr.py /path/to/project
+
+  Scan with specific plugins:
+    python tyr.py /path/to/project --plugins nvd,osv
+
+  Scan with all plugins:
+    python tyr.py /path/to/project --plugins all
+
+  Use code analyzers:
+    python tyr.py /path/to/project --analyzers code-smell,secrets-scanner
+
+  Use analyzers with custom arguments:
+    python tyr.py /path/to/project --analyzers code-smell --max-function-lines 30
+
+  Complete scan (plugins + analyzers + code scan):
+    python tyr.py /path/to/project --plugins all --analyzers all --code-scan
+        """
+    )
+    
+    parser.add_argument("project_path", nargs="?", help="Path to the project to scan")
+    parser.add_argument(
+        "--list-plugins",
+        action="store_true",
+        help="List all available plugins and exit"
+    )
+    parser.add_argument(
+        "-p", "--plugins",
+        help="Comma-separated list of vulnerability plugins to use (e.g., 'nvd,osv') or 'all'. Default: 'nvd'"
+    )
+    parser.add_argument(
+        "-a", "--analyzers",
+        help="Comma-separated list of code analyzers to use (e.g., 'code-smell,secrets-scanner') or 'all'"
+    )
     parser.add_argument("-n", "--project-name", help="Project name for the report")
     parser.add_argument(
         "-o", "--output", default="tyr_report.md", help="Output filename"
     )
-    parser.add_argument("-k", "--nvd-api-key", help="NVD API key for faster scans")
+    parser.add_argument(
+        "-k", "--nvd-api-key",
+        help="NVD API key for faster scans (or set NVD_API_KEY env var)"
+    )
+    parser.add_argument(
+        "--github-token",
+        help="GitHub token for GitHub Advisory plugin (or set GITHUB_TOKEN env var)"
+    )
     parser.add_argument(
         "-d",
         "--delay",
         type=float,
         default=1.0,
-        help="Delay between API requests in seconds",
+        help="Delay between API requests in seconds (default: 1.0)",
     )
     parser.add_argument(
         "-q",
@@ -888,6 +986,44 @@ def main():
         help="Enable suspicious code pattern detection",
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output (show plugin loading and errors)",
+    )
+    
+    # Analyzer-specific arguments
+    parser.add_argument(
+        "--max-function-lines",
+        type=int,
+        help="(code-smell) Maximum lines allowed in a function (default: 50)"
+    )
+    parser.add_argument(
+        "--max-parameters",
+        type=int,
+        help="(code-smell) Maximum parameters allowed in a function (default: 5)"
+    )
+    parser.add_argument(
+        "--max-nesting",
+        type=int,
+        help="(code-smell) Maximum nesting depth allowed (default: 4)"
+    )
+    parser.add_argument(
+        "--min-entropy",
+        type=float,
+        help="(secrets-scanner) Minimum entropy for secret detection (default: 4.5)"
+    )
+    parser.add_argument(
+        "--check-entropy",
+        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        help="(secrets-scanner) Enable high-entropy string detection (default: true)"
+    )
+    parser.add_argument(
+        "--ignore-test-files",
+        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        help="(secrets-scanner) Ignore files in test directories (default: true)"
+    )
+    
+    parser.add_argument(
         "-v",
         "--version",
         action="version",
@@ -896,9 +1032,62 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle --list-plugins
+    if args.list_plugins:
+        scanner = TyrScanner(verbose=args.verbose)
+        scanner.plugin_manager.list_plugins()
+        sys.exit(0)
+
+    # Require project_path if not listing plugins
+    if not args.project_path:
+        parser.print_help()
+        sys.exit(1)
+
+    # Print banner when help is requested
+    if "-h" in sys.argv or "--help" in sys.argv:
+        scanner = TyrScanner()
+        scanner.print_banner()
+
+    # Parse plugin names
+    plugin_names = None
+    if args.plugins:
+        plugin_names = [p.strip() for p in args.plugins.split(",")]
+    
+    # Parse analyzer names
+    analyzer_names = None
+    if args.analyzers:
+        analyzer_names = [a.strip() for a in args.analyzers.split(",")]
+
+    # Get API keys from args or environment
+    nvd_api_key = args.nvd_api_key or os.getenv("NVD_API_KEY")
+    github_token = args.github_token or os.getenv("GITHUB_TOKEN")
+    
+    # Collect analyzer arguments
+    analyzer_args = {}
+    if args.max_function_lines is not None:
+        analyzer_args['max-function-lines'] = args.max_function_lines
+    if args.max_parameters is not None:
+        analyzer_args['max-parameters'] = args.max_parameters
+    if args.max_nesting is not None:
+        analyzer_args['max-nesting'] = args.max_nesting
+    if args.min_entropy is not None:
+        analyzer_args['min-entropy'] = args.min_entropy
+    if args.check_entropy is not None:
+        analyzer_args['check-entropy'] = args.check_entropy
+    if args.ignore_test_files is not None:
+        analyzer_args['ignore-test-files'] = args.ignore_test_files
+
     scanner = TyrScanner(
-        nvd_api_key=args.nvd_api_key, delay=args.delay, enable_code_scan=args.code_scan
+        plugin_names=plugin_names,
+        analyzer_names=analyzer_names,
+        nvd_api_key=nvd_api_key,
+        github_token=github_token,
+        delay=args.delay,
+        enable_code_scan=args.code_scan,
+        verbose=args.verbose,
+        **analyzer_args
     )
+    
     scanner.run_scan(
         project_path=args.project_path,
         project_name=args.project_name,

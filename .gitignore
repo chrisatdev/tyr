@@ -18,3 +18,4 @@ build/
 *.log
 .DS_Store
 reports/
+updates/

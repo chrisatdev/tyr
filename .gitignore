@@ -17,3 +17,5 @@ build/
 .pytest_cache/
 *.log
 .DS_Store
+reports/
+updates/

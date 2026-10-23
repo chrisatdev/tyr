@@ -391,7 +391,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'Sensitive data printed to stdout/stderr',
                 'recommendation': 'Use proper logging framework',
             },
-            // logger.info with request data
+            # logger.info with request data
             {
                 'pattern': r'logger\.(info|debug)\s*\(.*request\.getParameter',
                 'issue': 'Request Parameter Logged',
@@ -399,7 +399,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'User request parameters logged',
                 'recommendation': 'Sanitize or avoid logging user input',
             },
-            // log.error with user input
+            # log.error with user input
             {
                 'pattern': r'log\.error\s*\(.*\+.*(request|param)',
                 'issue': 'User Input in Error Log',
@@ -407,7 +407,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'User input concatenated in error log',
                 'recommendation': 'Use parameterized logging',
             },
-            // SLF4J with sensitive data
+            # SLF4J with sensitive data
             {
                 'pattern': r'LOG(GER)?\.(info|debug|error)\s*\(.*(password|token|key|secret)',
                 'issue': 'Sensitive Data in SLF4J',
@@ -451,7 +451,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'Sensitive data logged via log package',
                 'recommendation': 'Never log sensitive data',
             },
-            // Printf with sensitive data
+            # Printf with sensitive data
             {
                 'pattern': r'log\.Printf\s*\(.*(password|token|secret|key)',
                 'issue': 'Sensitive Data in Printf',
@@ -459,7 +459,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'Sensitive data in log.Printf',
                 'recommendation': 'Use structured logging without sensitive data',
             },
-            // fmt.Println with request data
+            # fmt.Println with request data
             {
                 'pattern': r'fmt\.Print(ln)?\s*\(.*r\.(FormValue|PostForm)',
                 'issue': 'User Input Logged',
@@ -467,7 +467,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'User input logged via fmt',
                 'recommendation': 'Use structured logging, sanitize input',
             },
-            // zerolog with sensitive data
+            # zerolog with sensitive data
             {
                 'pattern': r'zerolog\.(Info|Debug|Warn|Error)\(\).(Str|Strs).*\("password',
                 'issue': 'Password in Zerolog',
@@ -475,7 +475,7 @@ class SecureLoggingCheckerPlugin(AnalyzerPlugin):
                 'description': 'Password field in structured log',
                 'recommendation': 'Never log password fields',
             },
-            // zap with sensitive data
+            # zap with sensitive data
             {
                 'pattern': r'zap\.(Sugar|Field)\.(Str|Int).*\("password',
                 'issue': 'Password in Zap Logger',

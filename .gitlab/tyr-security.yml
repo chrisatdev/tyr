@@ -1,0 +1,23 @@
+# Reusable template for projects that consume Tyr from the GitLab Container Registry.
+
+tyr-security-scan:
+  stage: test
+  image: "$TYR_IMAGE"
+  entrypoint: [""]
+  variables:
+    TYR_FAIL_ON: "none"
+    TYR_PLUGINS: "osv"
+    TYR_ANALYZERS: "all"
+    TYR_CODE_SCAN: "true"
+  script:
+    - |
+      set -- /opt/tyr/tyr.py "$CI_PROJECT_DIR"
+      set -- "$@" --plugins "$TYR_PLUGINS" --analyzers "$TYR_ANALYZERS"
+      set -- "$@" --output tyr_report.md --fail-on "$TYR_FAIL_ON" --quiet
+      if [ "$TYR_CODE_SCAN" = "true" ]; then set -- "$@" --code-scan; fi
+      python "$@"
+  artifacts:
+    when: always
+    paths:
+      - tyr_report.md
+    expire_in: 30 days

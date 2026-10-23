@@ -1,0 +1,9 @@
+.git
+.gitlab
+.github
+.env
+__pycache__
+*.pyc
+reports
+updates
+*.md

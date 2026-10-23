@@ -26,7 +26,7 @@ except ImportError as e:
     print("Make sure the plugins/ directory exists and contains base.py and base_analyzer.py")
     sys.exit(1)
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 
 class Colors:
@@ -363,6 +363,13 @@ class CodeScanner:
 
 class TyrScanner:
     """Main vulnerability scanner class with plugin support"""
+
+    SEVERITY_LEVELS = {
+        "CRITICAL": 4,
+        "HIGH": 3,
+        "MEDIUM": 2,
+        "LOW": 1,
+    }
 
     def __init__(
         self,
@@ -816,8 +823,9 @@ Tyr - Vulnerability Scanner v{__version__}
         project_name: str = None,
         output_file: str = "tyr_report.md",
         quiet: bool = False,
+        fail_on: str = "none",
     ):
-        """Run complete security scan"""
+        """Run complete security scan and return a CI-friendly exit code."""
         if not quiet:
             self.print_banner()
 
@@ -875,6 +883,22 @@ Tyr - Vulnerability Scanner v{__version__}
             vulnerabilities, code_findings, project_name, output_file, str(project_path)
         )
 
+        threshold = self.SEVERITY_LEVELS.get(fail_on.upper(), 0)
+        blocking_findings = []
+        if threshold:
+            blocking_findings.extend(
+                finding
+                for finding in vulnerabilities
+                if self.SEVERITY_LEVELS.get(finding.get("severity", "").upper(), 0)
+                >= threshold
+            )
+            blocking_findings.extend(
+                finding
+                for finding in code_findings
+                if self.SEVERITY_LEVELS.get(finding.get("risk", "").upper(), 0)
+                >= threshold
+            )
+
         # Print summary
         if not quiet:
             print(f"🚨 Vulnerabilities found: {len(vulnerabilities)}")
@@ -909,6 +933,15 @@ Tyr - Vulnerability Scanner v{__version__}
                 print(f"  HIGH: {high_risk}")
                 print(f"  MEDIUM: {medium_risk}")
                 print(f"  LOW: {low_risk}")
+
+        if blocking_findings:
+            print(
+                f"❌ Scan failed: {len(blocking_findings)} finding(s) at or above "
+                f"{fail_on.upper()}. Report generated: {output_file}"
+            )
+            return 1
+
+        return 0
 
 
 def main():
@@ -984,6 +1017,12 @@ Examples:
         "--code-scan",
         action="store_true",
         help="Enable suspicious code pattern detection",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=["none", "low", "medium", "high", "critical"],
+        default="none",
+        help="Exit with status 1 after generating the report when findings reach this level",
     )
     parser.add_argument(
         "--verbose",
@@ -1088,12 +1127,13 @@ Examples:
         **analyzer_args
     )
     
-    scanner.run_scan(
+    sys.exit(scanner.run_scan(
         project_path=args.project_path,
         project_name=args.project_name,
         output_file=args.output,
         quiet=args.quiet,
-    )
+        fail_on=args.fail_on,
+    ))
 
 
 if __name__ == "__main__":

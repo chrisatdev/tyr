@@ -64,6 +64,34 @@ python3 tyr.py --list-plugins
 
 ## 💻 Usage
 
+### GitLab CI from another project
+
+Tyr can be published as a versioned container image and consumed by projects
+that do not contain the Tyr source code. Include the reusable template from the
+Tyr GitLab project:
+
+```yaml
+include:
+  - project: "security/tyr"
+    ref: "v1.4.0"
+    file: "/.gitlab/tyr-security.yml"
+
+variables:
+  TYR_IMAGE: "registry.gitlab.com/security/tyr:v1.4.0"
+  TYR_FAIL_ON: "high"
+```
+
+The consuming project must have a `test` stage, or override the job's stage.
+
+The `tyr_report.md` file is published as a pipeline artifact even when the
+scan fails. Use `TYR_FAIL_ON: "none"` for an informational scan, or choose
+`low`, `medium`, `high`, or `critical` to block the pipeline after the report
+has been generated.
+
+The Tyr repository publishes its container image to the GitLab Container
+Registry on the default branch and for version tags. Consumer projects should
+pin both the template reference and `TYR_IMAGE` to the same Tyr version.
+
 ### 1. List Available Plugins
 
 ```bash
@@ -124,6 +152,24 @@ python3 tyr.py /path/to/project --plugins nvd,github-advisory
 python3 tyr.py /path/to/project --plugins nvd,osv --analyzers all -n "My Project" -o my_report.md
 ```
 
+### 7. Fail CI after generating the report
+
+Use `--fail-on` when the scan must block CI. Tyr always writes the report
+before returning exit code `1`:
+
+```bash
+# Generate the report and fail for HIGH or CRITICAL findings
+python3 tyr.py /path/to/project \
+  --plugins osv \
+  --analyzers all \
+  --code-scan \
+  --fail-on high \
+  --output tyr_report.md
+```
+
+Available thresholds are `none`, `low`, `medium`, `high`, and `critical`.
+`none` keeps the scan informational and returns exit code `0`.
+
 ## 🎯 Command Line Options
 
 | Option | Description |
@@ -138,6 +184,8 @@ python3 tyr.py /path/to/project --plugins nvd,osv --analyzers all -n "My Project
 | `--github-token` | GitHub token for GitHub Advisory plugin |
 | `-d, --delay` | Delay between API requests (default: 1.0) |
 | `-q, --quiet` | Quiet mode (only shows final message) |
+| `--code-scan` | Enable suspicious code pattern detection |
+| `--fail-on` | Exit with code `1` after the report when findings reach the selected level: none, low, medium, high, critical |
 | `--verbose` | Verbose output |
 | `-h, --help` | Show help |
 | `-v, --version` | Show version |
@@ -244,12 +292,12 @@ For higher rate limits on GitHub Advisory:
 ║           ██║      ██║   ██║  ██║        ║
 ║           ╚═╝      ╚═╝   ╚═╝  ╚═╝        ║
 ║                                          ║
-║         Security Scanner v1.3.0          ║
+║         Security Scanner v1.4.0          ║
 ║          by Christian Benitez            ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 
-Tyr - Security Scanner v1.3.0
+Tyr - Security Scanner v1.4.0
 ==================================================
 🔍 Scanning project: my-project
 📁 Path: /path/to/my-project
@@ -381,5 +429,5 @@ If you encounter issues:
 
 **Developed by Christian Benitez** - Questions? Open an issue in the repository.
 
-**Version:** 1.3.0  
+**Version:** 1.4.0
 **Date:** 2026-03-06

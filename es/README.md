@@ -111,14 +111,63 @@ python3 tyr.py /ruta/proyecto --analyzers sql-injection,xss-detector,auth-checke
 
 ### 5. Con API Keys (Más Rápido)
 
-```bash
-# Usando línea de comandos
-python3 tyr.py /ruta/proyecto --plugins nvd -k TU_API_KEY_NVD
+**Recomendado: guardar las keys en un archivo privado y limitarlas a una sola ejecución.**
+Evita `export` en los archivos de inicio del shell (todo proceso que se lance
+hereda la key) y evita `-k` / `--github-token` (el valor queda en el historial
+del shell y es visible en `ps`).
 
-# Usando variables de entorno
+Para obtener las keys, consulta [Obtención de API Keys](#-obtención-de-api-keys):
+[API Key de NVD](#api-key-de-nvd-opcional) y
+[token de GitHub](#token-de-github-requerido-por-github-advisory).
+
+```bash
+# Configuración única: pide la key sin mostrarla y la guarda con permisos 600
+(umask 077; mkdir -p ~/.config/tyr && chmod 700 ~/.config/tyr \
+  && read -rsp "NVD API key: " k && echo \
+  && printf '%s' "$k" > ~/.config/tyr/nvd.key && chmod 600 ~/.config/tyr/nvd.key; unset k)
+
+# En cada ejecución: la key solo existe en el entorno de este comando
+NVD_API_KEY="$(<~/.config/tyr/nvd.key)" python3 tyr.py /ruta/proyecto --plugins osv,nvd
+```
+
+#### Token de GitHub para `github-advisory`
+
+El plugin `github-advisory` **no** lee el repositorio analizado. Busca cada
+dependencia (nombre de paquete + ecosistema) en la base **pública** de Security
+Advisories de GitHub mediante la API GraphQL, que rechaza peticiones sin
+autenticar. Por eso necesita un token de **GitHub** (uno de GitLab no funciona),
+pero ese token no requiere acceso a ninguno de tus repositorios.
+
+Primero crea el token como se indica en
+[Token de GitHub](#token-de-github-requerido-por-github-advisory), y luego:
+
+```bash
+# Configuración única
+(umask 077; mkdir -p ~/.config/tyr && chmod 700 ~/.config/tyr \
+  && read -rsp "GitHub token: " t && echo \
+  && printf '%s' "$t" > ~/.config/tyr/github.token && chmod 600 ~/.config/tyr/github.token; unset t)
+
+# Verifica que el token puede consultar la base de advisories (devuelve un totalCount)
+curl -s -X POST https://api.github.com/graphql \
+  -H "Authorization: Bearer $(<~/.config/tyr/github.token)" \
+  -d '{"query":"{ securityVulnerabilities(first:1, ecosystem:NPM, package:\"lodash\") { totalCount } }"}'
+
+# Ejecuta con ambas keys limitadas a este comando
+NVD_API_KEY="$(<~/.config/tyr/nvd.key)" \
+GITHUB_TOKEN="$(<~/.config/tyr/github.token)" \
+  python3 tyr.py /ruta/proyecto --plugins osv,nvd,github-advisory
+```
+
+OSV ya importa los GitHub Security Advisories (IDs GHSA), por lo que
+`--plugins osv` cubre la mayor parte de los mismos datos sin token.
+
+En GitLab CI, define `NVD_API_KEY` como variable de CI/CD **masked** y
+**protected** en lugar de commitearla o pasarla por línea de comandos.
+
+```bash
+# No recomendado: se filtra por historial del shell, ps y entornos heredados
+python3 tyr.py /ruta/proyecto --plugins nvd -k TU_API_KEY_NVD
 export NVD_API_KEY="tu_key_aqui"
-export GITHUB_TOKEN="tu_token_aqui"
-python3 tyr.py /ruta/proyecto --plugins nvd,github-advisory
 ```
 
 ### 6. Nombre de Proyecto y Salida Personalizados
@@ -137,8 +186,8 @@ python3 tyr.py /ruta/proyecto --plugins nvd,osv --analyzers all -n "Mi Proyecto"
 | `-a, --analyzers` | Analizadores de código o 'all' |
 | `-n, --project-name` | Nombre del proyecto para el reporte |
 | `-o, --output` | Archivo de salida (default: `tyr_report.md`) |
-| `-k, --nvd-api-key` | API key de NVD para escaneos más rápidos |
-| `--github-token` | Token de GitHub para plugin GitHub Advisory |
+| `-k, --nvd-api-key` | API key de NVD para escaneos más rápidos ([cómo obtenerla](#api-key-de-nvd-opcional); preferir la variable `NVD_API_KEY`, ver [Con API Keys](#5-con-api-keys-más-rápido)) |
+| `--github-token` | Token de GitHub para plugin GitHub Advisory ([cómo obtenerlo](#token-de-github-requerido-por-github-advisory); preferir la variable `GITHUB_TOKEN`) |
 | `-d, --delay` | Delay entre requests (default: 1.0) |
 | `-q, --quiet` | Modo silencioso |
 | `--verbose` | Salida verbosa |
@@ -151,9 +200,9 @@ python3 tyr.py /ruta/proyecto --plugins nvd,osv --analyzers all -n "Mi Proyecto"
 
 | Plugin | Descripción | API Key |
 |--------|-------------|---------|
-| `nvd` | National Vulnerability Database (Gobierno US) | Opcional |
+| `nvd` | National Vulnerability Database (Gobierno US) | Opcional ([obtener key](#api-key-de-nvd-opcional)) |
 | `osv` | Open Source Vulnerabilities (Google) | No requerida |
-| `github-advisory` | GitHub Security Advisory Database | Opcional |
+| `github-advisory` | GitHub Security Advisory Database | Requerido ([token classic, sin scopes](#token-de-github-requerido-por-github-advisory)) |
 
 ### Analizadores de Código (Análisis de Código Fuente)
 
@@ -226,15 +275,23 @@ Obtén escaneos más rápidos (0.6s de delay vs 6s sin API key):
 
 1. Visita [NVD API Key Request](https://nvd.nist.gov/developers/request-an-api-key)
 2. Regístrate y solicita tu API key gratuita
-3. Úsala con `-k TU_KEY` o configura la variable de entorno `NVD_API_KEY`
+3. Guárdala y úsala como se indica en [Con API Keys](#5-con-api-keys-más-rápido)
 
-### Token de GitHub (Opcional)
+### Token de GitHub (requerido por `github-advisory`)
 
-Para mayores límites de rate en GitHub Advisory:
+La API GraphQL de GitHub rechaza peticiones sin autenticar, por lo que el
+plugin `github-advisory` necesita un token. Crea uno de mínimo privilegio:
 
-1. Ve a GitHub Settings → Developer settings → Personal access tokens
-2. Genera un nuevo token (no necesitas permisos especiales)
-3. Úsalo con `--github-token` o configura la variable `GITHUB_TOKEN`
+1. Ve a <https://github.com/settings/tokens/new>
+2. Tipo: **Personal access token (classic)**
+3. Scopes: **no marques ningún scope** (solo datos públicos)
+4. Expiración: corta (p. ej. 30–90 días)
+5. Guárdalo, verifícalo y úsalo como se indica en
+   [Token de GitHub para `github-advisory`](#token-de-github-para-github-advisory)
+
+Un token sin scopes puede leer datos públicos como la base de advisories, pero
+no puede acceder a tus repositorios, organizaciones ni a la configuración de tu
+cuenta.
 
 ## 📊 Ejemplo de Salida
 

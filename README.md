@@ -136,14 +136,63 @@ python3 tyr.py /path/to/project --analyzers sql-injection,xss-detector,auth-chec
 
 ### 5. With API Keys (Faster)
 
-```bash
-# Using command line
-python3 tyr.py /path/to/project --plugins nvd -k YOUR_NVD_API_KEY
+**Recommended: keep keys in a private file and scope them to a single run.**
+Avoid `export` in your shell rc files (every process you start inherits the
+key) and avoid `-k` / `--github-token` (the value lands in shell history and is
+visible in `ps`).
 
-# Using environment variables
+To get the keys, see [Obtaining API Keys](#-obtaining-api-keys):
+[NVD API Key](#nvd-api-key-optional) and
+[GitHub Token](#github-token-required-by-github-advisory).
+
+```bash
+# One-time setup: prompt for the key without echoing it, store it with mode 600
+(umask 077; mkdir -p ~/.config/tyr && chmod 700 ~/.config/tyr \
+  && read -rsp "NVD API key: " k && echo \
+  && printf '%s' "$k" > ~/.config/tyr/nvd.key && chmod 600 ~/.config/tyr/nvd.key; unset k)
+
+# Each run: the key only exists in the environment of this command
+NVD_API_KEY="$(<~/.config/tyr/nvd.key)" python3 tyr.py /path/to/project --plugins osv,nvd
+```
+
+#### GitHub token for `github-advisory`
+
+The `github-advisory` plugin does **not** read the scanned repository. It looks
+up each dependency (package name + ecosystem) in GitHub's **public** Security
+Advisory Database through the GraphQL API, which rejects unauthenticated
+requests. So it needs a **GitHub** token (a GitLab token will not work), but
+that token needs no access to any of your repositories.
+
+First create the token as described in
+[GitHub Token](#github-token-required-by-github-advisory), then:
+
+```bash
+# One-time setup
+(umask 077; mkdir -p ~/.config/tyr && chmod 700 ~/.config/tyr \
+  && read -rsp "GitHub token: " t && echo \
+  && printf '%s' "$t" > ~/.config/tyr/github.token && chmod 600 ~/.config/tyr/github.token; unset t)
+
+# Check the token can query the advisory database (expects a totalCount)
+curl -s -X POST https://api.github.com/graphql \
+  -H "Authorization: Bearer $(<~/.config/tyr/github.token)" \
+  -d '{"query":"{ securityVulnerabilities(first:1, ecosystem:NPM, package:\"lodash\") { totalCount } }"}'
+
+# Run with both keys scoped to this command
+NVD_API_KEY="$(<~/.config/tyr/nvd.key)" \
+GITHUB_TOKEN="$(<~/.config/tyr/github.token)" \
+  python3 tyr.py /path/to/project --plugins osv,nvd,github-advisory
+```
+
+OSV already imports GitHub Security Advisories (GHSA IDs), so `--plugins osv`
+covers most of the same data without any token.
+
+In GitLab CI, define `NVD_API_KEY` as a **masked** and **protected** CI/CD
+variable instead of committing it or passing it on the command line.
+
+```bash
+# Discouraged: leaks via shell history, ps, and inherited environments
+python3 tyr.py /path/to/project --plugins nvd -k YOUR_NVD_API_KEY
 export NVD_API_KEY="your_key_here"
-export GITHUB_TOKEN="your_token_here"
-python3 tyr.py /path/to/project --plugins nvd,github-advisory
 ```
 
 ### 6. Custom Project Name and Output
@@ -180,8 +229,8 @@ Available thresholds are `none`, `low`, `medium`, `high`, and `critical`.
 | `-a, --analyzers` | Comma-separated code analyzers or 'all' |
 | `-n, --project-name` | Project name for report |
 | `-o, --output` | Output filename (default: `tyr_report.md`) |
-| `-k, --nvd-api-key` | NVD API key for faster scans |
-| `--github-token` | GitHub token for GitHub Advisory plugin |
+| `-k, --nvd-api-key` | NVD API key for faster scans ([how to get it](#nvd-api-key-optional); prefer the `NVD_API_KEY` env var, see [With API Keys](#5-with-api-keys-faster)) |
+| `--github-token` | GitHub token for GitHub Advisory plugin ([how to get it](#github-token-required-by-github-advisory); prefer the `GITHUB_TOKEN` env var) |
 | `-d, --delay` | Delay between API requests (default: 1.0) |
 | `-q, --quiet` | Quiet mode (only shows final message) |
 | `--code-scan` | Enable suspicious code pattern detection |
@@ -196,9 +245,9 @@ Available thresholds are `none`, `low`, `medium`, `high`, and `critical`.
 
 | Plugin | Description | API Key |
 |--------|-------------|---------|
-| `nvd` | National Vulnerability Database (US Government) | Optional |
+| `nvd` | National Vulnerability Database (US Government) | Optional ([get key](#nvd-api-key-optional)) |
 | `osv` | Open Source Vulnerabilities (Google) | Not required |
-| `github-advisory` | GitHub Security Advisory Database | Optional |
+| `github-advisory` | GitHub Security Advisory Database | Required ([classic token, no scopes](#github-token-required-by-github-advisory)) |
 
 ### Code Analyzers (Source Code Analysis)
 
@@ -271,15 +320,22 @@ Get faster scanning (0.6s delay vs 6s without):
 
 1. Visit [NVD API Key Request](https://nvd.nist.gov/developers/request-an-api-key)
 2. Register and request your free API key
-3. Use with `-k YOUR_KEY` or set `NVD_API_KEY` environment variable
+3. Store and use it as shown in [With API Keys](#5-with-api-keys-faster)
 
-### GitHub Token (Optional)
+### GitHub Token (required by `github-advisory`)
 
-For higher rate limits on GitHub Advisory:
+GitHub's GraphQL API rejects unauthenticated requests, so the
+`github-advisory` plugin needs a token. Create a least-privilege one:
 
-1. Go to GitHub Settings → Developer settings → Personal access tokens
-2. Generate new token (no special scopes needed)
-3. Use with `--github-token` or set `GITHUB_TOKEN` env var
+1. Go to <https://github.com/settings/tokens/new>
+2. Type: **Personal access token (classic)**
+3. Scopes: **leave every scope unchecked** (public data only)
+4. Expiration: short (e.g. 30–90 days)
+5. Store, verify, and use it as shown in
+   [GitHub token for `github-advisory`](#github-token-for-github-advisory)
+
+A token with no scopes can read public data such as the advisory database, but
+it cannot access your repositories, organizations, or account settings.
 
 ## 📊 Example Output
 

@@ -599,8 +599,9 @@ Tyr - Vulnerability Scanner v{__version__}
             seen_ids = set()
             for plugin in self.enabled_plugins:
                 try:
+                    version = dep["version"] if getattr(plugin, "accepts_raw_version", False) else clean_ver
                     plugin_vulns = plugin.query_vulnerabilities(
-                        dep["name"], clean_ver, dep.get("type")
+                        dep["name"], version, dep.get("type")
                     )
 
                     for vuln in plugin_vulns:

@@ -150,7 +150,10 @@ def _pnpm_key(key: str):
             return v5.group(1), v5.group(2).split("_")[0]
     elif not re.match(r"^(?:@[^/]+/)?[^/@]+@", key):
         return None  # v5 non-registry keys such as github.com/owner/repo/sha
-    return _split_name_version(re.sub(r"\(.*\)$", "", key))  # v6/v9, minus the peer suffix
+    name, version = _split_name_version(re.sub(r"\(.*\)$", "", key))  # v6/v9, minus the peer suffix
+    if version.startswith("npm:"):  # alias "al@npm:real@1.0.0" installs real
+        name, version = _split_name_version(version[4:])
+    return name, version
 
 
 def _npm_pnpm(path: Path) -> LockResult:

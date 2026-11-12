@@ -71,6 +71,9 @@ class KeyShapesTest(unittest.TestCase):
             "/@a/b@1.0.0(react@18.2.0)": ("@a/b", "1.0.0"),                    # v6 scoped + peer
             "'@cacheable/memory@2.2.0'": ("@cacheable/memory", "2.2.0"),        # v9 quoted scoped
             "minimist@1.2.5": ("minimist", "1.2.5"),                           # v9
+            "/al@npm:real@1.0.0": ("real", "1.0.0"),                           # v6 alias
+            "/al@npm:@s/real@1.0.0(react@18.2.0)": ("@s/real", "1.0.0"),       # v6 scoped alias + peer
+            "al@npm:real@1.0.0": ("real", "1.0.0"),                            # v9 alias
             "pkg@git+ssh://git@github.com/o/r.git#abc": ("pkg", "git+ssh://git@github.com/o/r.git#abc"),
         }
         for key, expected in cases.items():

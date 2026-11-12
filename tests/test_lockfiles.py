@@ -263,6 +263,13 @@ class HostileInputTest(unittest.TestCase):
             self.assertLess(time.perf_counter() - started, 0.5)
             self.assertEqual([d["name"] for d in result.dependencies], ["bar"])
 
+    def test_yarn_v1_alias_reports_the_real_package(self):
+        text = ('# yarn lockfile v1\n\n"al@npm:bar@^2.0.0":\n  version "2.1.0"\n'
+                '  resolved "https://registry.yarnpkg.com/bar/-/bar-2.1.0.tgz#abc"\n'
+                '\n"@s/al@npm:@s/real@^1.0.0":\n  version "1.2.0"\n')
+        result = parse_lockfile(self.write("yarn.lock", text.encode()))
+        self.assertEqual([(d["name"], d["version"]) for d in result.dependencies], [("bar", "2.1.0"), ("@s/real", "1.2.0")])
+
     def test_a_utf8_bom_is_ignored(self):
         path = self.write("requirements.txt", b"\xef\xbb\xbfrequests==2.25.0\n")
         self.assertEqual([d["name"] for d in parse_lockfile(path).dependencies], ["requests"])

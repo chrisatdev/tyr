@@ -211,6 +211,8 @@ def _npm_yarn(path: Path) -> LockResult:
                 continue
             version = version.group(1)
         else:
+            if descriptor.startswith("npm:"):  # alias "al@npm:bar@^2.0.0" installs bar
+                name = _split_name_version(descriptor[4:])[0]
             version = re.search(r'^[ \t]+version "([^"]+)"', body, re.M)
             if not version or re.match(r"^(git|github:|file:|link:|https?:|ssh:)", descriptor):
                 result.skipped.append(name)

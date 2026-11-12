@@ -1,5 +1,6 @@
 .env
 *.txt
+!tests/fixtures/**/*.txt
 tyr_report.md
 .obsidian
 __pycache__/

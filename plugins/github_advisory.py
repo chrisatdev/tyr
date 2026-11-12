@@ -74,6 +74,7 @@ class GitHubAdvisoryPlugin(VulnerabilityPlugin):
             "composer": "COMPOSER",
             "maven": "MAVEN",
             "cargo": "RUST",
+            "go": "GO",
             "nuget": "NUGET",
         }
 

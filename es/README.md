@@ -48,7 +48,7 @@ Nombrado en honor al dios nórdico de la guerra y la justicia, Tyr busca protege
 
 ### Prerrequisitos
 
-- Python 3.7 o superior
+- Python 3.7 o superior (3.11+ para leer lockfiles TOML como `poetry.lock`, `uv.lock` y `Cargo.lock`; en versiones anteriores Tyr usa el manifiesto y avisa)
 - pip (gestor de paquetes de Python)
 
 ### Instalación de Dependencias

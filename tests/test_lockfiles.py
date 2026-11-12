@@ -222,6 +222,19 @@ class HostileInputTest(unittest.TestCase):
         with self.assertRaises(LockfileError):
             parse_lockfile(path)
 
+    def test_yarn_blocks_with_many_blank_lines_parse_in_linear_time(self):
+        import time
+        blanks = "  \n" * 40000
+        v1 = '# yarn lockfile v1\n\nfoo@^1.0.0:\n' + blanks + '\nbar@^1.0.0:\n  version "1.0.0"\n'
+        berry = ('__metadata:\n  version: 6\n\n"foo@npm:^1.0.0":\n' + blanks +
+                 '\n"bar@npm:^1.0.0":\n  version: 1.0.0\n  resolution: "bar@npm:1.0.0"\n')
+        for text in (v1, berry):
+            path = self.write("yarn.lock", text.encode())
+            started = time.perf_counter()
+            result = parse_lockfile(path)
+            self.assertLess(time.perf_counter() - started, 0.5)
+            self.assertEqual([d["name"] for d in result.dependencies], ["bar"])
+
     def test_a_utf8_bom_is_ignored(self):
         path = self.write("requirements.txt", b"\xef\xbb\xbfrequests==2.25.0\n")
         self.assertEqual([d["name"] for d in parse_lockfile(path).dependencies], ["requests"])

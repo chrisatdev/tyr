@@ -202,16 +202,16 @@ def _npm_yarn(path: Path) -> LockResult:
         first = header[:-1].split(",")[0].strip().strip('"')
         name, descriptor = _split_name_version(first)
         if berry:
-            resolution = re.search(r'^\s+resolution: "?([^"\n]+)"?', body, re.M)
+            resolution = re.search(r'^[ \t]+resolution: "?([^"\n]+)"?', body, re.M)
             target = resolution.group(1) if resolution else first
             name, protocol = _split_name_version(target)
-            version = re.search(r"^\s+version: (\S+)", body, re.M)
+            version = re.search(r"^[ \t]+version: (\S+)", body, re.M)
             if not protocol.startswith("npm:") or not version:
                 result.skipped.append(name)
                 continue
             version = version.group(1)
         else:
-            version = re.search(r'^\s+version "([^"]+)"', body, re.M)
+            version = re.search(r'^[ \t]+version "([^"]+)"', body, re.M)
             if not version or re.match(r"^(git|github:|file:|link:|https?:|ssh:)", descriptor):
                 result.skipped.append(name)
                 continue

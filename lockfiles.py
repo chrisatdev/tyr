@@ -81,7 +81,7 @@ def _read_text(path: Path) -> str:
     if len(data) > MAX_LOCKFILE_BYTES:
         raise LockfileError(f"{path}: larger than {MAX_LOCKFILE_BYTES} bytes")
     try:
-        return data.decode("utf-8-sig")  # editors on Windows prepend a BOM
+        return data.decode("utf-8-sig").replace("\r\n", "\n")  # Windows: BOM and CRLF
     except UnicodeDecodeError as error:
         raise LockfileError(f"{path}: not UTF-8 text ({error.reason})") from error
 

@@ -148,6 +148,34 @@ class OtherEcosystemsTest(unittest.TestCase):
         self.assertEqual(skipped, ["example.com/local"])
 
 
+class LineEndingsTest(unittest.TestCase):
+    """Files edited or checked out on Windows use CRLF."""
+
+    def crlf_copy(self, fixture, name):
+        import tempfile
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, directory)
+        target = directory / name
+        target.write_bytes((FIXTURES / fixture / name).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+        return target
+
+    def test_go_mod_with_crlf_keeps_its_require_block(self):
+        crlf = self.crlf_copy("gomod", "go.mod")
+        self.assertIn(b"\r\n", crlf.read_bytes())
+        deps, skipped = found("gomod", "go.mod")
+        result = parse_lockfile(crlf)
+        self.assertEqual({(d["name"], d["version"], d["scope"]) for d in result.dependencies}, deps)
+        self.assertEqual(sorted(result.skipped), skipped)
+
+    def test_every_fixture_parses_the_same_with_crlf(self):
+        def summary(path):
+            result = parse_lockfile(path)
+            return sorted((d["name"], d["version"], d["scope"]) for d in result.dependencies), sorted(result.skipped)
+
+        for path in FIXTURES.glob("*/*"):
+            self.assertEqual(summary(self.crlf_copy(path.parent.name, path.name)), summary(path), path)
+
+
 class RecordShapeTest(unittest.TestCase):
     def test_every_dependency_is_exact_typed_and_sourced(self):
         expected_type = {

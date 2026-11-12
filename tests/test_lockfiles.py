@@ -94,6 +94,18 @@ class PythonTest(unittest.TestCase):
         expected = {(n, v, None) for n, v in self.PYPI.items()} | {("iniconfig", "2.0.0", None)}
         self.assertEqual(deps, expected)
 
+    def test_poetry_skips_every_non_registry_source(self):
+        import tempfile, shutil
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        packages = ['[[package]]\nname = "requests"\nversion = "2.25.0"\n']
+        for kind in ["legacy", "git", "file", "directory", "url"]:
+            packages.append(f'[[package]]\nname = "{kind}-pkg"\nversion = "1.0.0"\n[package.source]\ntype = "{kind}"\nurl = "x"\n')
+        (directory / "poetry.lock").write_text("\n".join(packages) + "\n[metadata]\nlock-version = \"2.0\"\n")
+        result = parse_lockfile(directory / "poetry.lock")
+        self.assertEqual([d["name"] for d in result.dependencies], ["requests"])
+        self.assertEqual(sorted(result.skipped), sorted(f"{k}-pkg" for k in ["legacy", "git", "file", "directory", "url"]))
+
     def test_pipfile_lock_separates_default_and_develop(self):
         deps, _ = found("pipenv", "Pipfile.lock")
         expected = {(n, v, "prod") for n, v in self.PYPI.items()} | {("iniconfig", "2.0.0", "dev")}

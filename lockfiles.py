@@ -236,7 +236,7 @@ def _pypi_poetry(path: Path) -> LockResult:
     result = LockResult()
     for pkg in data.get("package", []):
         source = pkg.get("source") or {}
-        if source.get("type") in ("git", "directory", "file", "url"):
+        if source.get("type") in ("legacy", "git", "directory", "file", "url"):
             result.skipped.append(pkg["name"])
             continue
         category = pkg.get("category")  # only in lockfiles written by Poetry < 1.5

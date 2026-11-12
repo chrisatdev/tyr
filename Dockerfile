@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /opt/tyr
 
-COPY tyr.py ./
+COPY tyr.py lockfiles.py ./
 COPY plugins ./plugins
 
 RUN pip install --no-cache-dir requests

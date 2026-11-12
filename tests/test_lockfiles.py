@@ -107,6 +107,20 @@ class PythonTest(unittest.TestCase):
         self.assertEqual(deps, {(n, v, None) for n, v in self.PYPI.items()})
 
 
+class WithoutTomllibTest(unittest.TestCase):
+    """README promises Python 3.7+; tomllib arrives in 3.11, so TOML lockfiles must degrade."""
+
+    def test_toml_lockfiles_raise_lockfile_error_so_the_manifest_is_used(self):
+        import lockfiles
+        saved, lockfiles.tomllib = lockfiles.tomllib, None
+        try:
+            for fixture, name in [("poetry", "poetry.lock"), ("uv", "uv.lock"), ("cargo", "Cargo.lock")]:
+                with self.assertRaisesRegex(LockfileError, "3.11"):
+                    parse_lockfile(FIXTURES / fixture / name)
+        finally:
+            lockfiles.tomllib = saved
+
+
 class OtherEcosystemsTest(unittest.TestCase):
     def test_composer_lock_strips_the_v_prefix(self):
         deps, _ = found("composer", "composer.lock")

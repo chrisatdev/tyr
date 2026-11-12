@@ -45,7 +45,7 @@ Named after the Norse god of war and justice, Tyr aims to protect your projects 
 
 ### Prerequisites
 
-- Python 3.7 or higher
+- Python 3.7 or higher (3.11+ to read TOML lockfiles such as `poetry.lock`, `uv.lock` and `Cargo.lock`; on older versions Tyr falls back to the manifest and warns)
 - pip (Python package manager)
 
 ### Dependency Installation

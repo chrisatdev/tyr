@@ -59,6 +59,17 @@ class VulnerabilityPlugin(ABC):
         return False
 
     @property
+    def accepts_raw_version(self) -> bool:
+        """
+        Whether query_vulnerabilities() should receive the version exactly as the
+        manifest declares it ("^1.2.0", "5.0.0-beta.1") instead of the cleaned one
+        ("1.2.0", "5.0.0"). Opt in when the plugin filters by version range: the
+        cleaned value of a range is only its lower bound, and filtering on that
+        hides advisories that affect the version actually installed.
+        """
+        return False
+
+    @property
     def api_key_env_var(self) -> str:
         """
         Environment variable name for the API key.

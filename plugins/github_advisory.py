@@ -3,6 +3,7 @@ GitHub Advisory Database Plugin for Tyr
 Queries GitHub's security advisory database
 """
 
+import re
 import time
 from typing import Dict, List, Any
 import requests
@@ -151,7 +152,7 @@ class GitHubAdvisoryPlugin(VulnerabilityPlugin):
 
                 # Check if this version is affected
                 version_range = node.get("vulnerableVersionRange", "")
-                if not self._version_affected(version, version_range):
+                if not self._version_affected(version, version_range, ecosystem=ecosystem):
                     continue
 
                 # Extract CVSS score
@@ -203,13 +204,104 @@ class GitHubAdvisoryPlugin(VulnerabilityPlugin):
             print(f"❌ GitHub Advisory plugin error for {package_name} {version}: {e}")
             return []
 
-    def _version_affected(self, version: str, version_range: str) -> bool:
-        """
-        Simple version range check.
-        This is a basic implementation - a full implementation would use
-        semantic versioning libraries.
-        """
-        # For now, return True to include all vulnerabilities
-        # A proper implementation would parse version ranges like "< 2.0.0"
-        # and compare against the actual version
+    @property
+    def accepts_raw_version(self) -> bool:
+        # Filters by range, so it needs to tell an exact version from a range.
         return True
+
+    def _version_affected(
+        self, version: str, version_range: str, exact: bool = False, ecosystem: str = None
+    ) -> bool:
+        """
+        Whether `version` falls inside a GitHub `vulnerableVersionRange`.
+
+        GitHub writes a range as comma-separated clauses that must all hold,
+        e.g. ">= 7.0.0, <= 7.3.6", "< 1.55.1" or "= 6.4.4". When the version
+        or the range cannot be understood, the advisory is kept: a false
+        positive is better than a hidden vulnerability. That includes a range
+        specifier such as "^1.2.0", which may resolve to an affected version:
+        only an exact version is ever filtered.
+
+        A spec with fewer than three numeric parts ("4.17", "18") is a range in
+        npm (4.17.x), so it is only compared as a version when the caller says it
+        is `exact`, as a lockfile entry is.
+
+        A "-suffix" is only ordered as a semver prerelease in ecosystems that use
+        semver (npm, crates.io, Go, NuGet). Elsewhere it means something else
+        (PyPI "2.0.0-1" is a post-release, after 2.0.0), so it keeps the advisory.
+        """
+        semver = (ecosystem or "").upper() in _SEMVER_ECOSYSTEMS
+        current = _parse_version(version, semver)
+        if current is None or not version_range or not version_range.strip():
+            return True
+        if not exact and len(current[0]) < 3:
+            return True
+
+        for clause in version_range.split(","):
+            match = _CLAUSE.match(clause.strip())
+            if not match:
+                return True
+            bound = _parse_version(match.group(2), semver)
+            if bound is None:
+                return True
+            if not _OPERATORS[match.group(1) or "="](_compare(current, bound)):
+                return False
+        return True
+
+
+_CLAUSE = re.compile(r"^(>=|<=|>|<|=)?\s*(\S+)$")
+_OPERATORS = {
+    ">=": lambda c: c >= 0,
+    "<=": lambda c: c <= 0,
+    ">": lambda c: c > 0,
+    "<": lambda c: c < 0,
+    "=": lambda c: c == 0,
+}
+# Only semver-style prerelease tags sort below their release. Maven "-RELEASE" or
+# "-SP1" and PyPI "-1" post-releases do not, so those do not parse as versions.
+_PRERELEASE_ID = r"(?:\d+|(?:alpha|beta|rc|pre|dev)\d*)"
+_VERSION = re.compile(
+    rf"^v?(\d+(?:\.\d+)*)(?:-({_PRERELEASE_ID}(?:\.{_PRERELEASE_ID})*))?(?:\+[0-9A-Za-z.-]+)?$",
+    re.IGNORECASE,
+)
+
+
+_SEMVER_ECOSYSTEMS = {"NPM", "RUST", "GO", "NUGET"}
+
+
+def _parse_version(text, semver=False):
+    """(release numbers, prerelease identifiers) or None when not a version.
+
+    Outside semver ecosystems any prerelease-looking suffix is not a version we
+    can order, so it returns None and the caller keeps the advisory.
+    """
+    match = _VERSION.match((text or "").strip())
+    if not match or (match.group(2) and not semver):
+        return None
+    release = tuple(int(part) for part in match.group(1).split("."))
+    prerelease = tuple(match.group(2).lower().split(".")) if match.group(2) else ()
+    return release, prerelease
+
+
+def _compare(a, b) -> int:
+    """Semver-style ordering: -1, 0 or 1. Missing parts count as zero."""
+    (release_a, pre_a), (release_b, pre_b) = a, b
+    width = max(len(release_a), len(release_b))
+    padded_a = release_a + (0,) * (width - len(release_a))
+    padded_b = release_b + (0,) * (width - len(release_b))
+    if padded_a != padded_b:
+        return -1 if padded_a < padded_b else 1
+    # A prerelease sorts before its release: 5.0.0-rc.1 < 5.0.0.
+    if pre_a == pre_b:
+        return 0
+    if not pre_a or not pre_b:
+        return 1 if not pre_a else -1
+    for x, y in zip(pre_a, pre_b):
+        if x == y:
+            continue
+        if x.isdigit() and y.isdigit():
+            return -1 if int(x) < int(y) else 1
+        if x.isdigit() != y.isdigit():
+            return -1 if x.isdigit() else 1  # numeric identifiers sort first
+        return -1 if x < y else 1
+    return -1 if len(pre_a) < len(pre_b) else 1

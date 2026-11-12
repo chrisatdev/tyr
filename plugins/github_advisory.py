@@ -93,6 +93,7 @@ class GitHubAdvisoryPlugin(VulnerabilityPlugin):
                 description
                 severity
                 publishedAt
+                withdrawnAt
                 references {
                   url
                 }
@@ -148,6 +149,9 @@ class GitHubAdvisoryPlugin(VulnerabilityPlugin):
             for node in nodes:
                 advisory = node.get("advisory", {})
                 if not advisory:
+                    continue
+                # GitHub keeps serving withdrawn advisories; they are not vulnerabilities.
+                if advisory.get("withdrawnAt"):
                     continue
 
                 # Check if this version is affected

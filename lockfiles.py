@@ -19,6 +19,7 @@ the manifest instead of silently scanning nothing.
 
 import json
 import re
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -27,6 +28,11 @@ try:  # Python 3.11+
     import tomllib
 except ImportError:  # pragma: no cover - exercised only on older interpreters
     tomllib = None
+
+
+# Far above any real lockfile (large monorepo pnpm locks are a few MB), and low enough
+# that a hostile repository cannot make the scanner read without end.
+MAX_LOCKFILE_BYTES = 64 * 1024 * 1024
 
 
 class LockfileError(Exception):
@@ -57,9 +63,29 @@ def _split_name_version(spec: str):
     return spec[:at], spec[at + 1:]
 
 
+def _read_text(path: Path) -> str:
+    """
+    The file's text, refusing anything but a regular file of bounded size: a FIFO
+    would block the read forever and a device such as /dev/zero would never end.
+    """
+    try:
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode):
+            raise LockfileError(f"{path}: not a regular file")
+        if info.st_size > MAX_LOCKFILE_BYTES:
+            raise LockfileError(f"{path}: larger than {MAX_LOCKFILE_BYTES} bytes")
+        with open(path, "rb") as handle:
+            data = handle.read(MAX_LOCKFILE_BYTES + 1)
+    except OSError as error:
+        raise LockfileError(f"{path}: {error}") from error
+    if len(data) > MAX_LOCKFILE_BYTES:
+        raise LockfileError(f"{path}: larger than {MAX_LOCKFILE_BYTES} bytes")
+    return data.decode("utf-8")
+
+
 def _load_json(path: Path):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(_read_text(path))
     except (OSError, ValueError) as error:
         raise LockfileError(f"{path}: {error}") from error
 
@@ -68,7 +94,7 @@ def _load_toml(path: Path):
     if tomllib is None:
         raise LockfileError(f"{path}: reading TOML lockfiles needs Python 3.11+ (tomllib)")
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
+        return tomllib.loads(_read_text(path))
     except (OSError, ValueError) as error:
         raise LockfileError(f"{path}: {error}") from error
 
@@ -125,10 +151,7 @@ def _pnpm_key(key: str):
 
 
 def _npm_pnpm(path: Path) -> LockResult:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as error:
-        raise LockfileError(f"{path}: {error}") from error
+    lines = _read_text(path).splitlines()
     if not any(line.startswith("lockfileVersion:") for line in lines):
         raise LockfileError(f"{path}: no lockfileVersion")
 
@@ -163,10 +186,7 @@ def _npm_pnpm(path: Path) -> LockResult:
 
 
 def _npm_yarn(path: Path) -> LockResult:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise LockfileError(f"{path}: {error}") from error
+    text = _read_text(path)
     berry = "\n__metadata:" in "\n" + text
     result = LockResult()
     seen = set()
@@ -249,10 +269,7 @@ def _pypi_pipfile(path: Path) -> LockResult:
 
 def parse_requirements(path: Path) -> LockResult:
     """Exact pins (==, ===) from a requirements file, pip-compile output included."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise LockfileError(f"{path}: {error}") from error
+    text = _read_text(path)
     result = LockResult()
     for line in text.replace("\\\n", " ").splitlines():
         line = line.split(" #", 1)[0].split(";", 1)[0].strip()
@@ -282,10 +299,7 @@ def _composer(path: Path) -> LockResult:
 
 
 def _gem(path: Path) -> LockResult:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as error:
-        raise LockfileError(f"{path}: {error}") from error
+    lines = _read_text(path).splitlines()
     result = LockResult()
     section, in_specs, seen = None, False, set()
     for line in lines:
@@ -325,10 +339,7 @@ def _cargo(path: Path) -> LockResult:
 
 
 def _go_mod(path: Path) -> LockResult:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise LockfileError(f"{path}: {error}") from error
+    text = _read_text(path)
     if not re.search(r"^module\s", text, re.M):
         raise LockfileError(f"{path}: no module directive")
 

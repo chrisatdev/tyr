@@ -10,6 +10,7 @@ import inspect
 import json
 import os
 import re
+import stat
 import sys
 import time
 from pathlib import Path
@@ -490,16 +491,37 @@ Tyr - Vulnerability Scanner v{__version__}
         ]
 
         wanted = set(patterns) | set(LOCKFILE_ECOSYSTEM)
+        root = Path(project_path).resolve()
         # os.walk so installed trees (node_modules, vendor, .venv...) are pruned, not
         # walked: their package.json files list dependencies that are not the project's.
         # Pruning only applies below the project root, wherever the project itself lives.
         for directory, subdirs, files in os.walk(project_path):
             subdirs[:] = sorted(d for d in subdirs if d not in SKIP_DIRS)
             for name in sorted(files):
-                if name in wanted:
-                    dependency_files.append(Path(directory) / name)
+                candidate = Path(directory) / name
+                if name in wanted and self._is_project_file(candidate, root):
+                    dependency_files.append(candidate)
 
         return dependency_files
+
+    @staticmethod
+    def _is_project_file(path: Path, root: Path) -> bool:
+        """
+        A regular file, or a symlink to a regular file inside the project. A FIFO named
+        like a lockfile would block the read forever, and a symlink could point at
+        /dev/zero or outside the project; a hostile repository can contain both.
+        """
+        try:
+            info = path.lstat()
+            if stat.S_ISREG(info.st_mode):
+                return True
+            if not stat.S_ISLNK(info.st_mode):
+                return False
+            target = path.resolve(strict=True)
+            target.relative_to(root)
+            return stat.S_ISREG(target.stat().st_mode)
+        except (OSError, ValueError, RuntimeError):
+            return False
 
     def collect_dependencies(self, project_path: Path) -> List[Dict]:
         """

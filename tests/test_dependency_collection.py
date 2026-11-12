@@ -1,6 +1,7 @@
 """How TyrScanner turns a project tree into the dependencies it looks up."""
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -82,6 +83,25 @@ class CollectDependenciesTest(unittest.TestCase):
         deps, out = self.collect()
         self.assertNotIn("local-lib", {name for _, name, _ in deps})
         self.assertIn("local-lib", out)
+
+
+    def test_only_regular_files_inside_the_project_are_read(self):
+        # A FIFO would block the read forever; a symlink can point at /dev/zero or
+        # outside the project. Neither is a lockfile a project ships.
+        shutil.copy(FIXTURES / "npm3" / "package-lock.json", self.base / "outside-lock.json")
+        os.mkfifo(self.project / "package-lock.json")
+        (self.project / "sub").mkdir()
+        (self.project / "sub" / "package-lock.json").symlink_to(self.base / "outside-lock.json")
+        (self.project / "dev").mkdir()
+        (self.project / "dev" / "yarn.lock").symlink_to("/dev/zero")
+        deps, _ = self.collect()
+        self.assertEqual(deps, set())
+
+    def test_a_symlink_to_a_file_inside_the_project_is_followed(self):
+        shutil.copy(FIXTURES / "npm3" / "package-lock.json", self.project / "real-lock.json")
+        (self.project / "package-lock.json").symlink_to(self.project / "real-lock.json")
+        deps, _ = self.collect()
+        self.assertEqual(deps, {("npm", "minimist", "1.2.5"), ("npm", "is-number", "7.0.0")})
 
 
 class ExactVersionsReachPluginsTest(unittest.TestCase):

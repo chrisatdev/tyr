@@ -154,6 +154,16 @@ class RecordShapeTest(unittest.TestCase):
         for name in ["package.json", "requirements.txt", "Gemfile", "composer.json", "Cargo.toml"]:
             self.assertFalse(is_lockfile(Path(name)), name)
 
+    def test_an_oversized_lockfile_is_refused(self):
+        import lockfiles
+        limit = lockfiles.MAX_LOCKFILE_BYTES
+        lockfiles.MAX_LOCKFILE_BYTES = 100
+        try:
+            with self.assertRaisesRegex(LockfileError, "larger than"):
+                parse_lockfile(FIXTURES / "npm3" / "package-lock.json")
+        finally:
+            lockfiles.MAX_LOCKFILE_BYTES = limit
+
     def test_a_broken_lockfile_raises_instead_of_returning_nothing(self):
         broken = FIXTURES.parent / "broken"
         broken.mkdir(exist_ok=True)

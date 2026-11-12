@@ -69,6 +69,7 @@ class OSVPlugin(VulnerabilityPlugin):
                 "composer": "Packagist",
                 "maven": "Maven",
                 "cargo": "crates.io",
+                "go": "Go",
             }
             ecosystem = ecosystem_map.get(package_type.lower())
             if ecosystem:

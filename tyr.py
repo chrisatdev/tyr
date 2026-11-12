@@ -17,6 +17,12 @@ from typing import Dict, List, Any
 
 import requests
 
+from lockfiles import LOCKFILE_ECOSYSTEM, LockfileError, is_lockfile, parse_lockfile, parse_requirements
+from plugins.base_analyzer import SKIP_DIRS
+
+# Manifests and the ecosystem their dependencies belong to.
+MANIFEST_ECOSYSTEM = {"package.json": "npm", "requirements.txt": "pypi", "composer.json": "composer", "Gemfile": "gem"}
+
 # Import plugin base classes
 try:
     from plugins.base import VulnerabilityPlugin
@@ -483,12 +489,72 @@ Tyr - Vulnerability Scanner v{__version__}
             "Dockerfile",  # Docker
         ]
 
-        for pattern in patterns:
-            for file_path in project_path.rglob(pattern):
-                if file_path.is_file():
-                    dependency_files.append(file_path)
+        wanted = set(patterns) | set(LOCKFILE_ECOSYSTEM)
+        # os.walk so installed trees (node_modules, vendor, .venv...) are pruned, not
+        # walked: their package.json files list dependencies that are not the project's.
+        # Pruning only applies below the project root, wherever the project itself lives.
+        for directory, subdirs, files in os.walk(project_path):
+            subdirs[:] = sorted(d for d in subdirs if d not in SKIP_DIRS)
+            for name in sorted(files):
+                if name in wanted:
+                    dependency_files.append(Path(directory) / name)
 
         return dependency_files
+
+    def collect_dependencies(self, project_path: Path) -> List[Dict]:
+        """
+        The dependencies to look up, preferring each directory's lockfiles.
+
+        Per directory and ecosystem, lockfiles that parse and list at least one package
+        replace the manifest: they hold the exact installed versions, transitive ones
+        included. Several lockfiles of one ecosystem are combined. A lockfile that
+        cannot be read never empties an ecosystem: the manifest is used instead, with a
+        warning. Entries from git, local paths or workspaces are reported, not looked up.
+        """
+        by_directory: Dict[Path, List[Path]] = {}
+        for file_path in self.find_dependency_files(Path(project_path)):
+            by_directory.setdefault(file_path.parent, []).append(file_path)
+
+        dependencies: List[Dict] = []
+        seen = set()
+
+        def add(deps):
+            for dep in deps:
+                key = (dep["type"], dep["name"], dep["version"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dep)
+
+        for directory, files in by_directory.items():
+            resolved = set()
+            for file_path in files:
+                if not is_lockfile(file_path):
+                    continue
+                try:
+                    result = parse_lockfile(file_path)
+                except LockfileError as error:
+                    print(f"{self.colors.YELLOW}⚠️  Could not read {file_path} ({error}); using its manifest instead{self.colors.END}")
+                    continue
+                if result.skipped:
+                    names = ", ".join(sorted(set(result.skipped)))
+                    print(f"{self.colors.CYAN}ℹ️  Not checked, not from a registry ({file_path.name}): {names}{self.colors.END}")
+                if result.dependencies:
+                    resolved.add(LOCKFILE_ECOSYSTEM[file_path.name])
+                    add(result.dependencies)
+
+            for file_path in files:
+                ecosystem = MANIFEST_ECOSYSTEM.get(file_path.name)
+                if ecosystem is None or ecosystem in resolved:
+                    continue
+                if file_path.name == "requirements.txt":
+                    try:
+                        add(parse_requirements(file_path).dependencies)
+                    except LockfileError as error:
+                        print(f"{self.colors.YELLOW}Warning: Could not parse {file_path}: {error}{self.colors.END}")
+                else:
+                    add(self.parse_dependencies(file_path))
+
+        return dependencies
 
     def parse_dependencies(self, file_path: Path) -> List[Dict]:
         """Parse dependencies from various file types"""
@@ -589,7 +655,8 @@ Tyr - Vulnerability Scanner v{__version__}
             return []
 
         for dep in dependencies:
-            clean_ver = self.clean_version(dep["version"])
+            # A lockfile version is exact: cleaning it would drop prerelease tags.
+            clean_ver = dep["version"] if dep.get("exact") else self.clean_version(dep["version"])
             if clean_ver == "unknown":
                 continue
 
@@ -854,10 +921,7 @@ Tyr - Vulnerability Scanner v{__version__}
         if not quiet:
             print(f"📄 Dependency files found: {len(dependency_files)}")
 
-        dependencies = []
-        for file_path in dependency_files:
-            deps = self.parse_dependencies(file_path)
-            dependencies.extend(deps)
+        dependencies = self.collect_dependencies(project_path_obj)
 
         if not quiet:
             print(f"📦 Dependencies found: {len(dependencies)}")

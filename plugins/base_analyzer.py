@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 
+# Directories holding installed, vendored or generated code rather than the project's own.
+SKIP_DIRS = {'node_modules', '.git', 'vendor', 'dist', 'build',
+             '.venv', 'venv', '__pycache__', '.next', '.cache'}
+
+
 class AnalyzerPlugin(ABC):
     """
     Base class for code analyzer plugins.
@@ -168,12 +173,9 @@ class AnalyzerPlugin(ABC):
         Override to customize skip logic.
         """
         # Skip common directories
-        skip_dirs = {'node_modules', '.git', 'vendor', 'dist', 'build', 
-                    '.venv', 'venv', '__pycache__', '.next', '.cache'}
-        
         # Check if any parent is a skip directory
         for parent in file_path.parents:
-            if parent.name in skip_dirs:
+            if parent.name in SKIP_DIRS:
                 return True
         
         # Skip minified files

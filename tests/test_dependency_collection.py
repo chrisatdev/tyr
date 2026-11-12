@@ -60,6 +60,18 @@ class CollectDependenciesTest(unittest.TestCase):
         self.assertEqual(deps, {("npm", "minimist", "^1.2.0")})
         self.assertIn("package-lock.json", out)
 
+    def test_undecodable_and_hostile_files_never_abort_the_scan(self):
+        self.write("package.json", {"dependencies": {"minimist": "^1.2.0"}})
+        (self.project / "package-lock.json").write_bytes(b'{"dependencies":' * 100000 + b"{}" + b"}" * 100000)
+        (self.project / "requirements.txt").write_bytes("requests==2.25.0\n".encode("utf-16"))
+        self.write("api/Gemfile", 'gem "rack", "2.2.3"\n')
+        (self.project / "api" / "Gemfile.lock").write_bytes("GEM\n  specs:\n    caf\xe9 (1.0.0)\n".encode("latin-1"))
+        deps, out = self.collect()
+        self.assertIn(("npm", "minimist", "^1.2.0"), deps)
+        self.assertIn(("gem", "rack", "2.2.3"), deps)
+        self.assertIn("package-lock.json", out)
+        self.assertIn("Gemfile.lock", out)
+
     def test_lockfiles_of_one_ecosystem_are_combined(self):
         shutil.copy(FIXTURES / "npm3" / "package-lock.json", self.project / "package-lock.json")
         shutil.copy(FIXTURES / "yarnberry" / "yarn.lock", self.project / "yarn.lock")

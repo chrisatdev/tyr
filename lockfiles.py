@@ -80,7 +80,10 @@ def _read_text(path: Path) -> str:
         raise LockfileError(f"{path}: {error}") from error
     if len(data) > MAX_LOCKFILE_BYTES:
         raise LockfileError(f"{path}: larger than {MAX_LOCKFILE_BYTES} bytes")
-    return data.decode("utf-8")
+    try:
+        return data.decode("utf-8-sig")  # editors on Windows prepend a BOM
+    except UnicodeDecodeError as error:
+        raise LockfileError(f"{path}: not UTF-8 text ({error.reason})") from error
 
 
 def _load_json(path: Path):
@@ -400,14 +403,14 @@ def is_lockfile(path: Path) -> bool:
 
 def parse_lockfile(path: Path) -> LockResult:
     """Parses a lockfile (or a requirements file) by name. Raises LockfileError when unreadable."""
-    if path.name == "requirements.txt":
-        return parse_requirements(path)
-    parser = _PARSERS.get(path.name)
+    parser = parse_requirements if path.name == "requirements.txt" else _PARSERS.get(path.name)
     if parser is None:
         raise LockfileError(f"{path}: not a known lockfile")
     try:
         return parser(path)
     except LockfileError:
         raise
-    except (KeyError, TypeError, AttributeError, IndexError) as error:
-        raise LockfileError(f"{path}: unexpected structure ({error})") from error
+    except RecursionError as error:
+        raise LockfileError(f"{path}: nested too deeply") from error
+    except Exception as error:  # a hostile or odd file must never abort the whole scan
+        raise LockfileError(f"{path}: unexpected structure ({type(error).__name__}: {error})") from error

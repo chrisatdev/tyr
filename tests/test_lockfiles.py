@@ -193,5 +193,41 @@ class RecordShapeTest(unittest.TestCase):
             broken.rmdir()
 
 
+class HostileInputTest(unittest.TestCase):
+    """Whatever a repository contains, a parser fails with LockfileError and never crashes the scan."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, self.dir)
+
+    def write(self, name, data):
+        path = self.dir / name
+        path.write_bytes(data)
+        return path
+
+    def test_utf16_requirements_raise_lockfile_error(self):
+        path = self.write("requirements.txt", "requests==2.25.0\n".encode("utf-16"))
+        with self.assertRaises(LockfileError):
+            parse_lockfile(path)
+
+    def test_latin1_gemfile_lock_raises_lockfile_error(self):
+        path = self.write("Gemfile.lock", "GEM\n  specs:\n    caf\xe9 (1.0.0)\n".encode("latin-1"))
+        with self.assertRaises(LockfileError):
+            parse_lockfile(path)
+
+    def test_deeply_nested_json_raises_lockfile_error(self):
+        depth = 100000
+        path = self.write("package-lock.json", b'{"dependencies":' * depth + b"{}" + b"}" * depth)
+        with self.assertRaises(LockfileError):
+            parse_lockfile(path)
+
+    def test_a_utf8_bom_is_ignored(self):
+        path = self.write("requirements.txt", b"\xef\xbb\xbfrequests==2.25.0\n")
+        self.assertEqual([d["name"] for d in parse_lockfile(path).dependencies], ["requests"])
+        path = self.write("package-lock.json", b'\xef\xbb\xbf{"packages": {"node_modules/a": {"version": "1.0.0"}}}')
+        self.assertEqual([d["name"] for d in parse_lockfile(path).dependencies], ["a"])
+
+
 if __name__ == "__main__":
     unittest.main()
